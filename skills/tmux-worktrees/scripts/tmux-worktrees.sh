@@ -67,6 +67,15 @@ export TMUX_WT_CONF="$CONF"
 
 T() { tmux -L "$SOCKET" "$@"; }
 
+# --- Flag parsing (must happen before NAMES population) ----------------------
+# --add NAME: called from WorktreeCreate hook — adds one window to a running
+# session without attaching. Falls through to full launch if no session yet.
+ADD_NAME=""
+if [[ "${1:-}" == "--add" ]]; then
+  ADD_NAME="${2:-}"
+  shift 2 2>/dev/null || true
+fi
+
 # --- Worktree list (sorted alphabetically → stable port assignment) ----------
 if [[ $# -gt 0 ]]; then
   NAMES=("$@")
@@ -110,14 +119,6 @@ expand_placeholders() {
 
   printf '%s' "$str"
 }
-
-# --add NAME: called from WorktreeCreate hook — adds one window to a running
-# session without attaching. Falls through to full launch if no session yet.
-ADD_NAME=""
-if [[ "${1:-}" == "--add" ]]; then
-  ADD_NAME="${2:-}"
-  shift 2 2>/dev/null || true
-fi
 
 # --- Session -----------------------------------------------------------------
 session_exists=false
@@ -178,7 +179,7 @@ for idx in "${!NAMES[@]}"; do
   T set -pt "$MAIN_PANE" @role "$MAIN_LABEL"
   T send-keys -t "$MAIN_PANE" "$MAIN_CMD" C-m
 
-  # Service panes (left column, stacked)
+  # Service panes (right column, stacked) — CLAUDE stays on the left
   PREV_PANE=""
   for ((i=0; i<SVC_COUNT; i++)); do
     lbl="${SVC_LABELS[$i]}"
@@ -188,7 +189,7 @@ for idx in "${!NAMES[@]}"; do
     cmd=$(expand_placeholders "${SVC_CMDS[$i]}" "$i" "$OFFSET")
 
     if [[ $i -eq 0 ]]; then
-      T split-window -hb -l "28%" -t "$MAIN_PANE" -c "$svc_dir"
+      T split-window -h -l "28%" -t "$MAIN_PANE" -c "$svc_dir"
     else
       T split-window -v -t "$PREV_PANE" -c "$svc_dir"
     fi
