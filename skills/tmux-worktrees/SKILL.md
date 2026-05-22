@@ -12,16 +12,15 @@ Launches (or re-attaches to) the tmux dev session for this repo.
 
 ### Step 0 — First-run install check
 
-Check if the WorktreeCreate hook is already wired:
+Check if the WorktreeCreate hook is wired:
 ```bash
 grep -q "tmux-worktrees" ~/.claude/settings.json 2>/dev/null && echo "installed" || echo "not installed"
 ```
 
-If not installed, run:
+If not installed, tell the user to re-run the install command:
 ```bash
-bash ~/.claude/skills/tmux-worktrees/install.sh
+bash <(curl -fsSL https://raw.githubusercontent.com/contextforce/tmux-worktrees/main/install.sh)
 ```
-This adds the global WorktreeCreate hook to `~/.claude/settings.json`. Only needed once per machine.
 
 ### Step 1 — If `tmux-worktree.yaml` is missing at the repo root
 
