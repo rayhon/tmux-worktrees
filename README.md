@@ -37,15 +37,31 @@ That's it. The hook is already active globally.
 
 ```bash
 claude --worktree feature-xyz   # creates worktree + symlinks env + npm install + adds tmux window
-/tmux-worktrees                 # opens the tmux session
+/tmux-worktrees                 # prepares the tmux session
 ```
+
+`/tmux-worktrees` (invoked from inside Claude Code) sets up the tmux session in the background. Claude Code can't attach a TTY itself, so attach from your terminal:
+
+```bash
+tmux -L wt attach -t wt
+```
+
+You only need to attach once — re-running `/tmux-worktrees` after adding worktrees just refreshes the session you're already attached to.
+
+## Navigation
+
+| Action | Keys / Mouse |
+|---|---|
+| Switch pane within a worktree | `Alt + ←/→/↑/↓` (stays zoomed) |
+| Switch between worktrees | `Shift + ←/→` |
+| Jump to pane fullscreen | Click the label in the status bar (CLAUDE / API / WEB / …) |
+| Pane picker | `Alt + m` |
 
 ## How it works
 
 - **Port assignment** is positional and stateless — worktrees sorted alphabetically get offset +10, +20, +30… added to each service's base port. Same name = same ports every time.
 - **`{PORT}`** in the cmd is replaced with the actual assigned port.
 - **`{LABEL_URL}`** gives you another service's URL (e.g. `{API_URL}`).
-- **Navigation:** Alt+arrow moves between panes (stays zoomed). Shift+arrow switches worktrees. Click service labels in the status bar to jump fullscreen.
 
 ## Requires
 
