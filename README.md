@@ -14,6 +14,8 @@ A Claude Code skill that manages a tmux dev session for git worktrees. Each work
 * **Bottom left**: worktrees (shift + left/right) to navigate
 * **Bottom right**: agent and services (click at the label change view)
 
+<br/>
+
 ## Install
 
 ```bash
