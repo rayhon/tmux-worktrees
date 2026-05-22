@@ -4,11 +4,13 @@ A Claude Code skill that manages a tmux dev session for git worktrees. Each work
 
 ## Overall View
 <img width="2694" height="1480" alt="Screenshot 2026-05-22 at 1 18 43 PM" src="https://github.com/user-attachments/assets/3e12d2b4-1065-40b0-bcb1-beec47cef162" />
+
 * **Top**: worktree selector
 * **Bottom**: agent and services quick view
 
 ## Worktree View
 <img width="2578" height="1546" alt="Screenshot 2026-05-22 at 2 31 46 AM" src="https://github.com/user-attachments/assets/f053cd9a-771d-46ca-aee9-66af355bea44" />
+
 * **Bottom left**: worktrees (shift + left/right) to navigate
 * **Bottom right**: agent and services (click at the label change view)
 
