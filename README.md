@@ -5,7 +5,7 @@ A Claude Code skill that manages a tmux dev session for git worktrees. Each work
 ## Install
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/contextforce/tmux-worktrees/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/rayhon/tmux-worktrees/main/install.sh)
 ```
 
 Downloads the skill to `~/.claude/skills/tmux-worktrees/` and wires the global `WorktreeCreate` hook in `~/.claude/settings.json`. Run once per machine.

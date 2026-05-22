@@ -2,7 +2,7 @@
 # One-command install for the tmux-worktrees Claude Code skill.
 #
 # Usage:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/contextforce/tmux-worktrees/main/install.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/rayhon/tmux-worktrees/main/install.sh)
 #
 # What it does:
 #   1. Downloads skill files to ~/.claude/skills/tmux-worktrees/
@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-REPO_URL="https://raw.githubusercontent.com/contextforce/tmux-worktrees/main"
+REPO_URL="https://raw.githubusercontent.com/rayhon/tmux-worktrees/main"
 SKILL_DIR="$HOME/.claude/skills/tmux-worktrees"
 SETTINGS="$HOME/.claude/settings.json"
 

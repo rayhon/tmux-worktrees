@@ -133,12 +133,12 @@ The launcher reads it, assigns ports based on worktree name (alphabetical positi
 The whole installation is now one command:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/contextforce/tmux-worktrees/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/rayhon/tmux-worktrees/main/install.sh)
 ```
 
 That script copies the skill into place and registers the global `WorktreeCreate` hook. Then for any repo you want to use it in, you drop a `tmux-worktree.yaml` at the root and type `/tmux-worktrees`. Done.
 
-Source: **[github.com/contextforce/tmux-worktrees](https://github.com/contextforce/tmux-worktrees)**
+Source: **[github.com/rayhon/tmux-worktrees](https://github.com/rayhon/tmux-worktrees)**
 
 ## What I Carry Forward
 

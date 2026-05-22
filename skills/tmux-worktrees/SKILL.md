@@ -19,7 +19,7 @@ grep -q "tmux-worktrees" ~/.claude/settings.json 2>/dev/null && echo "installed"
 
 If not installed, tell the user to re-run the install command:
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/contextforce/tmux-worktrees/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/rayhon/tmux-worktrees/main/install.sh)
 ```
 
 ### Step 1 — If `tmux-worktree.yaml` is missing at the repo root
