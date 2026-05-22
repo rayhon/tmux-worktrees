@@ -21,7 +21,7 @@ If not installed, run:
 ```bash
 bash ~/.claude/skills/tmux-worktrees/install.sh
 ```
-This adds the global WorktreeCreate hook. Only needed once per machine.
+This adds the global WorktreeCreate hook to `~/.claude/settings.json`. Only needed once per machine.
 
 ### Step 1 — If `tmux-worktree.yaml` is missing at the repo root
 
