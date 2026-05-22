@@ -123,11 +123,22 @@ fi
 session_exists=false
 T has-session -t "$SESSION" 2>/dev/null && session_exists=true
 
+attach_or_instruct() {
+  if [[ -t 0 && -t 1 ]]; then
+    exec tmux -L "$SOCKET" attach -t "$SESSION"
+  else
+    echo "" >&2
+    echo "✓ tmux session '$SESSION' is ready (socket: $SOCKET)." >&2
+    echo "  No TTY available — attach from your terminal with:" >&2
+    echo "    tmux -L $SOCKET attach -t $SESSION" >&2
+  fi
+}
+
 if $session_exists && [[ -n "$ADD_NAME" ]]; then
   # Session running and we only need to add one window — skip attach at end
   :
 elif $session_exists; then
-  exec tmux -L "$SOCKET" attach -t "$SESSION"
+  attach_or_instruct
 fi
 
 # --- One window per worktree (idempotent: skip existing windows) -------------
@@ -196,5 +207,5 @@ done
 if [[ -n "$ADD_NAME" ]]; then
   T select-window -t "$SESSION:$ADD_NAME" 2>/dev/null || true
 else
-  exec tmux -L "$SOCKET" attach -t "$SESSION"
+  attach_or_instruct
 fi
