@@ -20,7 +20,6 @@ mkdir -p "$SKILL_DIR/scripts"
 
 files=(
   "skills/tmux-worktrees/SKILL.md"
-  "skills/tmux-worktrees/install.sh"
   "skills/tmux-worktrees/scripts/tmux-worktrees.sh"
   "skills/tmux-worktrees/scripts/tmux-worktree.conf"
   "skills/tmux-worktrees/scripts/jump-pane.sh"
@@ -32,7 +31,6 @@ for file in "${files[@]}"; do
   curl -fsSL "$REPO_URL/$file" -o "$dest"
 done
 
-chmod +x "$SKILL_DIR/install.sh"
 chmod +x "$SKILL_DIR/scripts/"*.sh
 
 echo "  done" >&2
