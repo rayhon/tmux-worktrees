@@ -5,11 +5,10 @@ A Claude Code skill that manages a tmux dev session for git worktrees. Each work
 ## Install
 
 ```bash
-npx skills add https://github.com/rayhon1014/tmux-worktrees --skill tmux-worktrees
-bash ~/.claude/skills/tmux-worktrees/install.sh
+bash <(curl -fsSL https://raw.githubusercontent.com/contextforce/tmux-worktrees/main/install.sh)
 ```
 
-`install.sh` runs once to wire the global `WorktreeCreate` hook and register the `/tmux-worktrees` slash command.
+Downloads the skill to `~/.claude/skills/tmux-worktrees/` and wires the global `WorktreeCreate` hook in `~/.claude/settings.json`. Run once per machine.
 
 ## Per-repo setup
 
