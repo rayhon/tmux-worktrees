@@ -31,7 +31,10 @@ Drop a `tmux-worktree.yaml` at your repo root:
 ```yaml
 main:
   label: CLAUDE
-  cmd: claude
+  # -c resumes the last session in this worktree; falls back to a fresh
+  # session on first launch. --dangerously-skip-permissions auto-approves
+  # all tool calls so you don't have to babysit every worktree.
+  cmd: claude -c --dangerously-skip-permissions || claude --dangerously-skip-permissions
 
 services:
   - label: API
@@ -46,6 +49,8 @@ services:
 ```
 
 That's it. The hook is already active globally.
+
+> **Heads up on `--dangerously-skip-permissions`:** auto-approves every tool call Claude makes (writes, deletes, shell commands). Each worktree is in its own isolated folder so the blast radius is contained, but you're giving up the per-call prompt. Use `cmd: claude` if you'd rather keep the prompts.
 
 ## Usage
 
