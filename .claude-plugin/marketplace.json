@@ -1,0 +1,18 @@
+{
+  "name": "tmux-worktrees",
+  "metadata": {
+    "description": "Tmux dev session manager for Claude Code worktrees",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "tmux-worktrees",
+      "description": "Launch a tmux session with one window per git worktree. Each window runs your services as defined in tmux-worktree.yaml at the repo root.",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/tmux-worktrees"
+      ]
+    }
+  ]
+}
