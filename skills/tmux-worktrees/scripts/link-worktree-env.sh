@@ -61,15 +61,14 @@ for ((i=0; i<SVC_COUNT; i++)); do
   done
 done
 
-# Synchronous npm install on first setup — must finish before services launch,
-# otherwise tmux panes race against a partial node_modules (stale wrangler /
-# missing deps) and all services fail to start.
+# Background npm install on first setup
 if [[ ! -d "$WORKTREE_ABS/node_modules" ]]; then
   LOG="$WORKTREE_ABS/.npm-install.log"
   echo "" >&2
-  echo "→ Running npm install (synchronous; log: $LOG)" >&2
-  ( cd "$WORKTREE_ABS" && npm install ) >"$LOG" 2>&1
-  echo "  npm install complete" >&2
+  echo "→ Starting npm install in background" >&2
+  echo "  Watch: tail -f $LOG" >&2
+  nohup bash -c "cd '$WORKTREE_ABS' && npm install" >"$LOG" 2>&1 </dev/null &
+  disown || true
 else
   echo "  node_modules present — skipping npm install" >&2
 fi
