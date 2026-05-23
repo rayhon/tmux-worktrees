@@ -61,13 +61,16 @@ for ((i=0; i<SVC_COUNT; i++)); do
   done
 done
 
-# Background npm install on first setup
+# Background npm install on first setup.
+# Writes .npm-install.pid while running so tmux-worktrees.sh can gate service
+# panes — otherwise dev panes race a partial node_modules and all fail.
 if [[ ! -d "$WORKTREE_ABS/node_modules" ]]; then
   LOG="$WORKTREE_ABS/.npm-install.log"
+  PIDFILE="$WORKTREE_ABS/.npm-install.pid"
   echo "" >&2
   echo "→ Starting npm install in background" >&2
   echo "  Watch: tail -f $LOG" >&2
-  nohup bash -c "cd '$WORKTREE_ABS' && npm install" >"$LOG" 2>&1 </dev/null &
+  nohup bash -c "echo \$\$ > '$PIDFILE'; trap 'rm -f \"$PIDFILE\"' EXIT; cd '$WORKTREE_ABS' && npm install" >"$LOG" 2>&1 </dev/null &
   disown || true
 else
   echo "  node_modules present — skipping npm install" >&2

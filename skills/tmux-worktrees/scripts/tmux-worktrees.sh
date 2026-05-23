@@ -188,6 +188,13 @@ for idx in "${!NAMES[@]}"; do
 
     cmd=$(expand_placeholders "${SVC_CMDS[$i]}" "$i" "$OFFSET")
 
+    # Gate against the background npm install spawned by link-worktree-env.sh.
+    # If install is still running, wait until its pidfile clears. No-op when
+    # node_modules is already populated (subsequent launches).
+    pf="$DIR/.npm-install.pid"
+    wait_cmd="while [ -f '$pf' ] && p=\$(cat '$pf' 2>/dev/null) && [ -n \"\$p\" ] && kill -0 \"\$p\" 2>/dev/null; do echo '  waiting for npm install (tail $DIR/.npm-install.log)...'; sleep 3; done; rm -f '$pf' 2>/dev/null"
+    gated_cmd="$wait_cmd; $cmd"
+
     if [[ $i -eq 0 ]]; then
       T split-window -h -l "28%" -t "$MAIN_PANE" -c "$svc_dir"
     else
@@ -196,7 +203,7 @@ for idx in "${!NAMES[@]}"; do
 
     PREV_PANE=$(T display-message -p -t "$TARGET" '#{pane_id}')
     T set -pt "$PREV_PANE" @role "$lbl"
-    T send-keys -t "$PREV_PANE" "$cmd" C-m
+    T send-keys -t "$PREV_PANE" "$gated_cmd" C-m
   done
 
   T select-layout -t "$TARGET" -E
