@@ -186,8 +186,6 @@ for idx in "${!NAMES[@]}"; do
 
   if $first; then
     T -f "$CONF" new-session -d -s "$SESSION" -c "$DIR" -n "$w"
-    T set -g status-right        "$STATUS_RIGHT"
-    T set -g status-right-length 200
     first=false
   else
     T new-window -t "$SESSION" -c "$DIR" -n "$w"
@@ -238,6 +236,15 @@ for idx in "${!NAMES[@]}"; do
   T select-pane  -t "$MAIN_PANE"
   T resize-pane -Z -t "$MAIN_PANE"
 done
+
+# Always re-apply the dynamic status bar after the loop.
+# This survives config reloads (which would otherwise clobber it with the
+# default `  %H:%M ` in tmux-worktree.conf) and runs on every launcher call
+# regardless of whether windows were added or skipped.
+if T has-session -t "$SESSION" 2>/dev/null; then
+  T set -g status-right        "$STATUS_RIGHT"
+  T set -g status-right-length 200
+fi
 
 # --add mode: called from hook in background — just switch to the new window, don't attach
 if [[ -n "$ADD_NAME" ]]; then
