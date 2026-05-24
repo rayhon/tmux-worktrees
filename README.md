@@ -82,6 +82,41 @@ You only need to attach once — re-running `/tmux-worktrees` after adding workt
 - **`{PORT}`** in the cmd is replaced with the actual assigned port.
 - **`{LABEL_URL}`** gives you another service's URL (e.g. `{API_URL}`).
 
+## Common pitfalls
+
+Worktrees run on offset ports (worktree #1 → +10, #2 → +20, …), but every env file in the worktree is symlinked from main, where the values were written for the original port (3000, 8787, etc). When an app reads its **own** URL from env, you get a mismatch — the dev server listens on `:3010` but thinks it's still `:3000`. Symptoms range from broken auth callbacks to silently-wrong API targets.
+
+**Rule of thumb: any env var that encodes a port or base URL must be re-derived per worktree, not symlinked.** Set them in `cmd:` using the `{LABEL_URL}` / `{LABEL_PORT}` placeholders so each worktree gets its own values.
+
+The usual suspects:
+
+| App / library | Variable | Failure mode |
+|---|---|---|
+| Better Auth | `APP_URL`, `AUTH_TRUSTED_ORIGINS` | `Invalid origin: http://localhost:3010` on every sign-in |
+| NextAuth | `NEXTAUTH_URL` | OAuth callback returns to main's port, session fails to set |
+| Next.js public URLs | `NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_API_URL` | Client-side fetches go to main's port instead of the worktree's |
+| OAuth providers (Google/GitHub) | redirect URI registered in provider dashboard | `redirect_uri_mismatch` — provider only knows about main's port. Add `localhost:3010`/3020/3030 to allowed callbacks |
+| CORS allowlists | server-side allowed origins | Request from `localhost:3010` rejected by the server it's calling |
+| Cross-service URLs | `MCP_HUB_URL`, `API_URL`, etc. | Worktree's web app calls *main's* API/MCP instead of its own worktree copy |
+
+Use `{LABEL_URL}` placeholders to fix them at the worktree boundary. Example for Better Auth + cross-service URLs:
+
+```yaml
+- label: WEB
+  cwd: apps/web
+  port: 3000
+  cmd: |
+    APP_URL={WEB_URL} NEXT_PUBLIC_APP_URL={WEB_URL}
+    AUTH_TRUSTED_ORIGINS={WEB_URL}
+    MCP_HUB_URL={MCP_URL} NEXT_PUBLIC_MCP_HUB_URL={MCP_URL}
+    AGENT_HUB_URL={AGENT_URL}
+    PORT={PORT} npm run dev
+```
+
+Now the worktree on port 3010 launches as a self-consistent `http://localhost:3010` — auth, fetch, and CORS all agree.
+
+> **Tip:** if you see *"Invalid origin"*, *"redirect_uri_mismatch"*, or *"Cross-Origin Request Blocked"* anywhere on a fresh worktree, the answer is almost always a missing `{LABEL_URL}` in your `cmd:` line.
+
 ## Requires
 
 - tmux

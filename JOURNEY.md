@@ -1,6 +1,6 @@
 # How I Stopped Fighting My Coding Agent and Started Cloning It
 
-*A six-stage journey from one terminal, one bug, one agent — to a tmux-managed swarm of Claude sessions, each in its own git worktree, each with its own dev stack, each isolated and reproducible. And the dead-ends along the way.*
+*A seven-stage journey from one terminal, one bug, one agent — to a tmux-managed swarm of Claude sessions, each in its own git worktree, each with its own dev stack, each isolated and reproducible. And the dead-ends along the way.*
 
 ---
 
@@ -106,7 +106,39 @@ Along the way I went down two dead-ends worth mentioning:
 
 **The lesson:** every time I tried to be too clever — share a pane, lazy-install hooks via the skill — I learned that the platform has good reasons for its boundaries. The shortest path is usually to lean on what tmux already does well, plus a small `.conf` to teach it your workflow.
 
-## Stage 6 — Skill-ifying the Whole Thing
+## Stage 6 — The Worktree Bleed
+
+By now I had visible worktrees, predictable ports, working dev stacks. And yet I kept losing time to one specific failure that took me embarrassingly long to name.
+
+I'd be working in a worktree session. I'd ask the agent to fix something in `apps/web/lib/auth.ts`. It would say "done." I'd reload the app — no change. I'd diff the worktree — clean. I'd diff the **parent repo** — and there it was: my supposedly-isolated change, sitting in the main checkout, mixing with whatever else was uncommitted there.
+
+The agent had edited the wrong copy of the file.
+
+Why? Several footguns, all silent:
+
+- The `Bash` tool starts each command in the parent repo's cwd, even when the rest of the session is "in" the worktree. So a `cd .claude/worktrees/foo && do-thing` works for that one call but `do-other-thing` in the next call starts back at the parent.
+- The agent uses an absolute path like `/Users/me/projects/repo/apps/web/lib/auth.ts` (because that's what Grep returned, or what the file mention rendered as) — and that path resolves to the parent, not the worktree.
+- A long-running dev server was already running from the parent path, so the agent "helpfully" edited the file it knew that server was loading from.
+
+In all three cases, no error fires. The edit succeeds, in the wrong file, in the wrong branch. You only notice when your worktree's behavior doesn't change, or when `git status` in the parent shows mystery edits hours later.
+
+I tried CLAUDE.md instructions ("always use the worktree path"). I tried memory entries. I tried being more careful. None of it worked, because we'd already established the lesson back in Stage 4: **if correctness depends on it, don't ask the agent.**
+
+The right fix is a `PreToolUse` hook that intercepts `Edit`, `Write`, `MultiEdit`, `NotebookEdit` and refuses any write whose path falls inside the parent repo *while the session's cwd is inside a worktree*. The hook is short — maybe 40 lines of bash. The pseudocode:
+
+```bash
+if cwd matches "<repo>/.claude/worktrees/<branch>/...":
+  if file_path under "<repo>/" but NOT under "<repo>/.claude/worktrees/<branch>/":
+    exit 2 with error: "blocked — that path is the parent repo; use $worktree_root/$relative instead"
+```
+
+Exit code 2 means the write is rejected *and* the error message is returned to the model. So the next thing Claude sees is *"blocked — that path is the parent repo; use `.claude/worktrees/foo/apps/web/lib/auth.ts` instead"*. It retries with the right path. Problem self-corrects within the same turn, no user intervention.
+
+This single hook eliminated a class of bug I'd been losing 20–30 minutes to per occurrence, several times a week.
+
+**The lesson:** worktree isolation is only as strong as your weakest path resolution. The agent will, eventually, get an absolute path that points at the wrong copy of the file — through Grep results, file mentions, autocompletion, or just shell muscle memory. Don't trust the agent to never make this mistake; trust the platform to refuse the write.
+
+## Stage 7 — Skill-ifying the Whole Thing
 
 By this point everything worked but only for *my* repo. The scripts were full of hardcoded paths to `apps/web`, `apps/mcp/mcp-hub`, port 8787, etc. Useless for anyone else, including future-me on a different project.
 
@@ -148,6 +180,7 @@ If you take nothing else from this story:
 - **A "worktree" isn't a "dev environment."** You have to bring the gitignored state — env files, local caches, install artifacts — explicitly. Plan for this.
 - **If correctness depends on a setup step, don't put it in the agent's prompt.** Put it in the platform. Hooks, install scripts, anything that runs without human or model judgment.
 - **Make multiple sessions visible.** A long-running dev workflow with N worktrees is unworkable if you can't see them all. tmux is ugly but solves this for free.
+- **Worktree isolation needs a guard.** Even with worktrees, the agent will eventually edit the wrong copy of a file via an absolute path. Use a `PreToolUse` hook to refuse writes that escape the worktree boundary.
 - **Build for one project, generalize ruthlessly the second time you need it.** YAML config at the repo root, generic scripts in a skill — every monorepo can have the same UX with different services.
 
 There's no clever insight here, really. Just a stack of small "oh, that's why" moments, each one trimming a stupid loss off the next day's work. If you've been quietly losing hours to one of these same problems, hopefully this saves you a few.
