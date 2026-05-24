@@ -70,3 +70,4 @@ Port base convention: round default down to nearest 100 (8787→8700, 51957→51
 - **Restart:** `tmux -L wt kill-server` then re-run the launcher.
 - **Add a worktree:** `claude --worktree <name>` — hook fires automatically, symlinks env, npm installs, adds tmux window.
 - **Port assignment:** alphabetical order, deterministic — 1st→+10, 2nd→+20, 3rd→+30.
+- **Worktree edit guard:** install.sh registers a `PreToolUse` hook (`prevent-parent-repo-edits.sh`) that blocks `Edit`/`Write`/`MultiEdit`/`NotebookEdit` from touching the parent repo's working tree while the session's `cwd` is inside `.claude/worktrees/<branch>/`. The agent gets an error with the suggested worktree path and has to retry. Prevents the common "agent edits `apps/web/foo.ts` in parent instead of worktree" mistake.

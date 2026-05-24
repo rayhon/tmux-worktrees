@@ -7,6 +7,8 @@
 # What it does:
 #   1. Downloads skill files to ~/.claude/skills/tmux-worktrees/
 #   2. Registers the WorktreeCreate hook in ~/.claude/settings.json
+#   3. Registers the PreToolUse worktree-edit guard (blocks accidental
+#      edits to the parent repo while the session is inside a worktree)
 
 set -euo pipefail
 
@@ -24,6 +26,7 @@ files=(
   "skills/tmux-worktrees/scripts/tmux-worktree.conf"
   "skills/tmux-worktrees/scripts/jump-pane.sh"
   "skills/tmux-worktrees/scripts/link-worktree-env.sh"
+  "skills/tmux-worktrees/scripts/prevent-parent-repo-edits.sh"
 )
 
 for file in "${files[@]}"; do
@@ -75,6 +78,39 @@ print("  done")
 EOF
 else
   echo "  WorktreeCreate hook already present — skipping" >&2
+fi
+
+# --- 3. Register PreToolUse worktree-edit guard -------------------------------
+# Blocks Edit/Write/MultiEdit/NotebookEdit from accidentally touching the
+# parent repo's working tree while the session's cwd is inside a worktree.
+# Catches the "agent edits apps/web/foo.ts in parent instead of worktree" bug.
+if ! grep -q "prevent-parent-repo-edits" "$SETTINGS" 2>/dev/null; then
+  echo "→ Adding PreToolUse worktree-edit guard to $SETTINGS" >&2
+  python3 - "$SETTINGS" <<'EOF'
+import json, sys
+
+path = sys.argv[1]
+with open(path) as f:
+    cfg = json.load(f)
+
+hooks = cfg.setdefault("hooks", {})
+preToolUse = hooks.setdefault("PreToolUse", [])
+preToolUse.append({
+    "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+    "hooks": [
+        {
+            "type": "command",
+            "command": "~/.claude/skills/tmux-worktrees/scripts/prevent-parent-repo-edits.sh"
+        }
+    ]
+})
+
+with open(path, "w") as f:
+    json.dump(cfg, f, indent=2)
+print("  done")
+EOF
+else
+  echo "  PreToolUse worktree-edit guard already present — skipping" >&2
 fi
 
 echo "" >&2

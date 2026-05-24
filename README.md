@@ -36,16 +36,24 @@ main:
   # all tool calls so you don't have to babysit every worktree.
   cmd: claude -c --dangerously-skip-permissions || claude --dangerously-skip-permissions
 
+# Global env vars exported into every service pane (per-service `env:` overrides)
+env:
+  API_URL: "{API_URL}"
+  NEXT_PUBLIC_API_URL: "{API_URL}"
+
 services:
   - label: API
     cwd: backend
     port: 3100
-    cmd: npm run dev --port {PORT}
+    cmd: PORT={PORT} npm run dev
 
   - label: WEB
     cwd: frontend
     port: 3000
-    cmd: API_URL={API_URL} npm run dev --port {PORT}
+    env:                             # per-service additions/overrides
+      AUTH_TRUSTED_ORIGINS: "{WEB_URL}"
+      APP_URL: "{WEB_URL}"
+    cmd: PORT={PORT} npm run dev
 ```
 
 That's it. The hook is already active globally.
@@ -73,8 +81,23 @@ You only need to attach once — re-running `/tmux-worktrees` after adding workt
 |---|---|
 | Switch pane within a worktree | `Alt + ←/→/↑/↓` (stays zoomed) |
 | Switch between worktrees | `Shift + ←/→` |
-| Jump to pane fullscreen | Click the label in the status bar (CLAUDE / API / WEB / …) |
+| Worktree picker (with live preview) | `Alt + w` |
 | Pane picker | `Alt + m` |
+| Jump to pane fullscreen | Click the label in the status bar (CLAUDE / API / WEB / …) |
+
+### Copy/paste from tmux panes
+
+Tmux's mouse selection is always a little clunky. The smoothest UX is to bypass tmux entirely while selecting — hold one key while dragging:
+
+| Terminal | Hold while dragging |
+|---|---|
+| iTerm2, Terminal.app | **⌥ Option** |
+| Alacritty, Ghostty, WezTerm | **⇧ Shift** |
+| Kitty | **Ctrl+Shift** |
+
+That gives you native selection — highlight stays, ⌘C / Ctrl-Shift-C copies normally.
+
+If you do drag inside tmux mouse mode, the bundled config keeps the selection visible on release and pipes it to your system clipboard (`pbcopy` / `wl-copy` / `xclip`, whichever is installed), plus enables OSC 52 for terminals that support it.
 
 ## How it works
 

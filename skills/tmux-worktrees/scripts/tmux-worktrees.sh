@@ -96,6 +96,33 @@ fi
 # Sort for stable positional offsets
 IFS=$'\n' NAMES=($(printf '%s\n' "${NAMES[@]}" | sort)) unset IFS
 
+# --- Env prefix construction -------------------------------------------------
+# Reads `.env` at the root (global) and `.services[idx].env` (per-service).
+# Returns a shell-safe `export K="V"; export K2="V2"; ` string with all
+# placeholders expanded. Per-service entries override global.
+build_env_prefix() {
+  local svc_idx="$1"
+  local offset="$2"
+  local prefix=""
+  local k v expanded
+
+  # Global env first
+  while IFS=$'\t' read -r k v; do
+    [[ -z "$k" || "$k" == "null" ]] && continue
+    expanded=$(expand_placeholders "$v" "$svc_idx" "$offset")
+    prefix+="export $k=\"${expanded//\"/\\\"}\"; "
+  done < <(yq -r '.env // {} | to_entries | .[] | [.key, .value] | @tsv' "$YAML" 2>/dev/null)
+
+  # Per-service overrides
+  while IFS=$'\t' read -r k v; do
+    [[ -z "$k" || "$k" == "null" ]] && continue
+    expanded=$(expand_placeholders "$v" "$svc_idx" "$offset")
+    prefix+="export $k=\"${expanded//\"/\\\"}\"; "
+  done < <(yq -r ".services[$svc_idx].env // {} | to_entries | .[] | [.key, .value] | @tsv" "$YAML" 2>/dev/null)
+
+  printf '%s' "$prefix"
+}
+
 # --- Placeholder expansion ---------------------------------------------------
 # Substitutes {PORT}, {INSPECTOR_PORT}, {LABEL_PORT}, {LABEL_URL} for a given
 # service index using the actual ports computed for the current worktree.
@@ -187,13 +214,14 @@ for idx in "${!NAMES[@]}"; do
     [[ "${SVC_CWDS[$i]}" != "." ]] && svc_dir="$DIR/${SVC_CWDS[$i]}"
 
     cmd=$(expand_placeholders "${SVC_CMDS[$i]}" "$i" "$OFFSET")
+    env_prefix=$(build_env_prefix "$i" "$OFFSET")
 
     # Gate against the background npm install spawned by link-worktree-env.sh.
     # If install is still running, wait until its pidfile clears. No-op when
     # node_modules is already populated (subsequent launches).
     pf="$DIR/.npm-install.pid"
     wait_cmd="while [ -f '$pf' ] && p=\$(cat '$pf' 2>/dev/null) && [ -n \"\$p\" ] && kill -0 \"\$p\" 2>/dev/null; do echo '  waiting for npm install (tail $DIR/.npm-install.log)...'; sleep 3; done; rm -f '$pf' 2>/dev/null"
-    gated_cmd="$wait_cmd; $cmd"
+    gated_cmd="${env_prefix}${wait_cmd}; $cmd"
 
     if [[ $i -eq 0 ]]; then
       T split-window -h -l "28%" -t "$MAIN_PANE" -c "$svc_dir"
