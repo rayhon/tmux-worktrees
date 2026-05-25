@@ -76,15 +76,34 @@ if [[ "${1:-}" == "--add" ]]; then
   shift 2 2>/dev/null || true
 fi
 
-# --- Worktree list (sorted alphabetically → stable port assignment) ----------
+# --- Worktree list -----------------------------------------------------------
+# Order matters: positional index → port offset (+10, +20, +30, ...).
+# We sort by directory creation time (oldest first) so existing worktrees
+# keep their offsets forever; new worktrees always land at the end and get
+# a fresh offset. Alphabetical sorting would shift existing worktrees' ports
+# when a new alphabetically-earlier name is added, colliding with their
+# already-running dev servers.
 if [[ $# -gt 0 ]]; then
   NAMES=("$@")
 else
+  # `stat -f %B` (macOS) prints birth time; `stat -c %W` on GNU. Use mtime
+  # as a portable fallback that's close enough — the worktree dir's mtime is
+  # set when `git worktree add` creates it and won't change unless touched.
+  if stat -f %m . >/dev/null 2>&1; then
+    STAT_FMT='stat -f %m'    # macOS / BSD
+  else
+    STAT_FMT='stat -c %Y'    # GNU
+  fi
   NAMES=()
-  for d in "$REPO/.claude/worktrees"/*/; do
-    [[ -d "$d" ]] || continue
-    NAMES+=("$(basename "$d")")
-  done
+  while IFS= read -r line; do
+    NAMES+=("${line#* }")
+  done < <(
+    for d in "$REPO/.claude/worktrees"/*/; do
+      [[ -d "$d" ]] || continue
+      ts=$($STAT_FMT "$d" 2>/dev/null || echo 0)
+      printf '%s %s\n' "$ts" "$(basename "$d")"
+    done | sort -n
+  )
 fi
 
 [[ ${#NAMES[@]} -eq 0 ]] && {
@@ -92,9 +111,6 @@ fi
   echo "Create one with: claude --worktree <name>" >&2
   exit 1
 }
-
-# Sort for stable positional offsets
-IFS=$'\n' NAMES=($(printf '%s\n' "${NAMES[@]}" | sort)) unset IFS
 
 # --- Env prefix construction -------------------------------------------------
 # Reads `.env` at the root (global) and `.services[idx].env` (per-service).
@@ -184,11 +200,16 @@ for idx in "${!NAMES[@]}"; do
 
   OFFSET=$(( (idx + 1) * 10 ))
 
-  if $first; then
+  if $first && ! $session_exists; then
+    # No session yet — create it with the first window.
     T -f "$CONF" new-session -d -s "$SESSION" -c "$DIR" -n "$w"
     first=false
+    session_exists=true
   else
+    # Session already exists (either pre-existing, or we just created it
+    # in a previous iteration of this loop). Add a window.
     T new-window -t "$SESSION" -c "$DIR" -n "$w"
+    first=false
   fi
   TARGET="$SESSION:$w"
 
