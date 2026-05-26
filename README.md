@@ -77,31 +77,51 @@ You only need to attach once — re-running `/tmux-worktrees` after adding workt
 
 ## Navigation
 
-| Action | Keys / Mouse |
+Mouse mode is **off by default** — it causes clipboard wipes and copy-mode traps inside VS Code/iTerm2. Everything is keyboard-driven:
+
+| Action | Keys |
 |---|---|
-| Switch pane within a worktree | `Alt + ←/→/↑/↓` (stays zoomed) |
+| Cycle through panes within a worktree | `Alt + ←/→` (or `↑/↓`) — wraps around CLAUDE → MCP → AGENT → WEB |
 | Switch between worktrees | `Shift + ←/→` |
 | Worktree picker (with live preview) | `Alt + w` |
 | Pane picker | `Alt + m` |
-| Jump to pane fullscreen | Click the label in the status bar (CLAUDE / API / WEB / …) |
+| Toggle mouse mode | `Ctrl+b m` — turn on briefly when you need clickable status / scroll-wheel |
 
-### Copy/paste from tmux panes
+The active pane shows up two ways: a **bright pane** (others dim gray) and the **matching label highlighted in yellow** in the top status bar.
 
-Tmux's mouse selection is always a little clunky. The smoothest UX is to bypass tmux entirely while selecting — hold one key while dragging:
+### Copy/paste
+
+Use your **terminal's own selection** — never tmux's. Hold the bypass key while dragging:
 
 | Terminal | Hold while dragging |
 |---|---|
 | iTerm2, Terminal.app | **⌥ Option** |
 | Alacritty, Ghostty, WezTerm | **⇧ Shift** |
 | Kitty | **Ctrl+Shift** |
+| VS Code terminal | (with mouse off in tmux) just drag normally |
 
-That gives you native selection — highlight stays, ⌘C / Ctrl-Shift-C copies normally.
+That gives you native selection — highlight stays, ⌘C copies, ⌘V pastes into the active pane. No tmux mouse mode, no OSC 52, no clipboard wipes.
 
-If you do drag inside tmux mouse mode, the bundled config keeps the selection visible on release and pipes it to your system clipboard (`pbcopy` / `wl-copy` / `xclip`, whichever is installed), plus enables OSC 52 for terminals that support it.
+### macOS Option+arrow inside VS Code
+
+VS Code intercepts Option+arrow for editor word-nav before tmux sees it. To make pane cycling work, add this to your VS Code `keybindings.json`:
+
+```json
+{ "key": "alt+left",  "command": "workbench.action.terminal.sendSequence",
+  "args": { "text": "[1;3D" }, "when": "terminalFocus" },
+{ "key": "alt+right", "command": "workbench.action.terminal.sendSequence",
+  "args": { "text": "[1;3C" }, "when": "terminalFocus" },
+{ "key": "alt+up",    "command": "workbench.action.terminal.sendSequence",
+  "args": { "text": "[1;3A" }, "when": "terminalFocus" },
+{ "key": "alt+down",  "command": "workbench.action.terminal.sendSequence",
+  "args": { "text": "[1;3B" }, "when": "terminalFocus" }
+```
+
+In iTerm2/Terminal.app, just enable Option-as-Meta in profile settings.
 
 ## How it works
 
-- **Port assignment** is positional and stateless — worktrees sorted alphabetically get offset +10, +20, +30… added to each service's base port. Same name = same ports every time.
+- **Port assignment** is by worktree creation time — first worktree gets offset +10, next +20, next +30… Existing worktrees keep their ports forever; new worktrees always get the next unused offset, so adding one never collides with running dev servers.
 - **`{PORT}`** in the cmd is replaced with the actual assigned port.
 - **`{LABEL_URL}`** gives you another service's URL (e.g. `{API_URL}`).
 
