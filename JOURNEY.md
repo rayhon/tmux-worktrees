@@ -96,7 +96,7 @@ I customized:
 - **`Alt+arrow`** to move between panes, staying zoomed (so you focus one pane fullscreen and "tab" through them).
 - **`Shift+arrow`** to jump between worktrees.
 - **`Alt+w`** to open a worktree picker — a tmux `choose-tree` view with live previews of each worktree's CLAUDE pane. Pick one, press Enter, drop into it fully interactive.
-- **Clickable status-bar labels** (CLAUDE / MCP / AGENT / WEB) so even when zoomed I can click straight to any pane.
+- **Status-bar labels** (CLAUDE / MCP / AGENT / WEB) on the top bar that follow the active pane — a `pane-focus-in` hook stores the active pane's `@role` in a session-level option, and the bar highlights the matching label in yellow.
 - A `@role` tmux pane variable that *doesn't* get overwritten by Claude's title shenanigans, so my labels stay correct.
 
 Along the way I went down two dead-ends worth mentioning:
