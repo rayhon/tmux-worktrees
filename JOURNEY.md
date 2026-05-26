@@ -59,7 +59,18 @@ With the setup wired to the hook, the agent literally cannot create a worktree w
 
 Port assignment got the same treatment: instead of remembering or typing, it's derived. Each worktree's offset is `(position * 10)`, where position is the creation-order rank — `+10`, `+20`, `+30` — so `MCP_PORT = 8700 + offset`, `WEB_PORT = 3000 + offset`, etc. Cross-service URLs (`MCP_HUB_URL`, `APP_URL`, …) are injected per-worktree at launch so every service sees the right neighbors.
 
-**The lesson:** if correctness depends on a setup step, don't ask the agent to do it. Put it in the platform. Hooks, scripts, environment injection — anything that runs without human or model judgment.
+The same principle solves one more failure mode: the agent **inside** a worktree session occasionally edits the wrong copy of a file. Bash tool calls start fresh in the parent repo's cwd, not the worktree's. The agent gets an absolute path from Grep or autocompletion that resolves to the parent. The edit succeeds in the wrong branch, no error fires, and you only notice when your worktree's behavior doesn't change.
+
+A `PreToolUse` hook closes the gap. It intercepts `Edit`, `Write`, `MultiEdit`, `NotebookEdit` and rejects any path that falls inside the parent repo while the session's cwd is inside a worktree. Exit code 2 returns the rejection to the model with a suggested correct path, so the agent retries with the right file and the bug self-corrects within the same turn:
+
+```bash
+# pseudocode
+if cwd matches "<repo>/.claude/worktrees/<branch>/...":
+  if file_path under "<repo>/" but NOT under the worktree:
+    exit 2: "blocked — that path is the parent repo; use $worktree_root/$relative instead"
+```
+
+**The lesson:** if correctness depends on a setup step, don't ask the agent to do it. Put it in the platform. Hooks for both **creation** (`WorktreeCreate` for symlinks + npm install) and **isolation** (`PreToolUse` for write guards), scripts for port assignment, env injection at launch — anything that runs without human or model judgment.
 
 ## Stage 5 — Tmux to Actually See Them All
 
