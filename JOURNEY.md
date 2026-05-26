@@ -1,6 +1,6 @@
 # How I Stopped Fighting My Coding Agent and Started Cloning It
 
-*A seven-stage journey from one terminal, one bug, one agent — to a tmux-managed swarm of Claude sessions, each in its own git worktree, each with its own dev stack, each isolated and reproducible. And the dead-ends along the way.*
+*An eight-stage journey from one terminal, one bug, one agent — to a tmux-managed swarm of Claude sessions, each in its own git worktree, each with its own dev stack, each isolated and reproducible. And the dead-ends along the way.*
 
 ---
 
@@ -160,7 +160,7 @@ services:
     cmd: API_URL={API_URL} npm run dev --port {PORT}
 ```
 
-The launcher reads it, assigns ports based on worktree name (alphabetical position → deterministic offset, no state files needed), and substitutes `{PORT}` and `{API_URL}` placeholders. The generic logic — tmux config, env symlinking, hook wiring — went into a Claude Code skill at `~/.claude/skills/tmux-worktrees/`.
+The launcher reads it, assigns ports by worktree directory creation time (oldest gets +10, next +20, etc.), and substitutes `{PORT}` and `{API_URL}` placeholders. The generic logic — tmux config, env symlinking, hook wiring — went into a Claude Code skill at `~/.claude/skills/tmux-worktrees/`.
 
 The whole installation is now one command:
 
@@ -171,6 +171,31 @@ bash <(curl -fsSL https://raw.githubusercontent.com/rayhon/tmux-worktrees/main/i
 That script copies the skill into place and registers the global `WorktreeCreate` hook. Then for any repo you want to use it in, you drop a `tmux-worktree.yaml` at the root and type `/tmux-worktrees`. Done.
 
 Source: **[github.com/rayhon/tmux-worktrees](https://github.com/rayhon/tmux-worktrees)**
+
+## Stage 8 — The Polish That Matters
+
+The first version "worked." Living with it for a week surfaced the small papercuts that drive you to give up on tools. Each one had a one-line fix; finding the *right* one line was the work.
+
+**Clipboard wipes on paste.** Copy a URL in the browser, switch to a tmux pane, ⌘V → nothing pasted, clipboard now empty. Two culprits, both ours:
+- `set -g set-clipboard on` was forwarding OSC 52 from any process inside the pane out to the system clipboard. Some inner TUI was emitting an empty OSC 52 on focus, wiping the clipboard. **Fix:** `set -g set-clipboard off`. Inner processes can no longer overwrite the host clipboard.
+- The mouse-drag-to-copy binding piped to `pbcopy` unconditionally. A click registered as a zero-pixel drag fired `pbcopy < /dev/null`, which clears the clipboard. **Fix:** `sh -c 'b=$(cat); [ -n "$b" ] && printf %s "$b" | pbcopy'` — guard against empty input.
+
+**Port collisions when adding a new worktree.** Original sort was alphabetical: a new worktree named `fix-homepage` sorted before existing `pois-admin-vibes`, taking its port (+10), while `pois-admin-vibes`'s running dev servers still held those ports. **Fix:** sort worktrees by directory creation time instead. Existing worktrees keep their ports forever; new worktrees always get the next unused offset.
+
+**Mouse mode is the source of most pain.** Inside VS Code's xterm.js + tmux, mouse-on routes clicks through layers that can wipe clipboard, trap you in copy mode, or emit `^[[A^[[B` literals when a TUI app handles scroll wheel. **Fix:** default `set -g mouse off`. Bind `Ctrl+b m` to toggle it on for the rare cases you want clickable status / drag-resize. You lose click-to-switch-pane; you gain a terminal that doesn't fight you.
+
+**Option+arrow ate by VS Code, not tmux.** With macOptionIsMeta on, you'd expect `Option+←` to send `ESC[1;3D` to tmux. VS Code intercepts it anyway for editor word-nav. **Fix:** `keybindings.json` override that forces VS Code to send the literal escape sequence to the terminal when terminal is focused:
+```json
+{ "key": "alt+left",  "command": "workbench.action.terminal.sendSequence",
+  "args": { "text": "[1;3D" }, "when": "terminalFocus" }
+```
+…and the same for the other three arrows.
+
+**Where am I?** Four panes look identical when you're tab-cycling through them with the keyboard. Two cheap signals: (1) `window-style fg=colour244` dims inactive panes, leaving the active one at full brightness; (2) a `pane-focus-in` hook stores the active pane's `@role` in a session-level `@active_role`, and the top status bar dynamically highlights the matching label in yellow. Now you can glance at either the pane or the status bar and instantly know which one is live.
+
+**The status bar kept disappearing.** The dynamic status-right was only being set when the session was *created*. Any `source-file` reload or `--add` invocation left the default `  %H:%M ` in place. **Fix:** apply status-right at the end of every launcher run, unconditionally.
+
+**The lesson:** the gap between "works in a demo" and "I trust it daily" is a stack of these one-liners. None of them are interesting individually. All of them together is the difference between a tool you reach for and a tool you avoid.
 
 ## What I Carry Forward
 

@@ -54,10 +54,17 @@ for ((i=0; i<SVC_COUNT; i++)); do
   SVC_CMDS+=(  "$(yq ".services[$i].cmd"                     "$YAML")")
 done
 
-# Build dynamic status-right from YAML labels
-STATUS_RIGHT="#[range=user|${MAIN_LABEL} fg=yellow bold] ${MAIN_LABEL} #[norange default]"
+# Build dynamic status-right from YAML labels.
+# The active label is highlighted yellow/bold based on the @active_role
+# session option (updated by pane-focus-in / after-select-pane hooks).
+build_label() {
+  local lbl="$1"
+  printf '#[range=user|%s]#{?#{==:%s,#{@active_role}},#[fg=yellow bold],#[fg=cyan]} %s #[norange default]' \
+    "$lbl" "$lbl" "$lbl"
+}
+STATUS_RIGHT="$(build_label "$MAIN_LABEL")"
 for lbl in "${SVC_LABELS[@]}"; do
-  STATUS_RIGHT+=" #[range=user|${lbl} fg=cyan] ${lbl} #[norange default]"
+  STATUS_RIGHT+=" $(build_label "$lbl")"
 done
 STATUS_RIGHT+="  %H:%M "
 
@@ -265,6 +272,10 @@ done
 if T has-session -t "$SESSION" 2>/dev/null; then
   T set -g status-right        "$STATUS_RIGHT"
   T set -g status-right-length 200
+  # Seed the active-role tracker so the status bar shows a highlight from
+  # the moment the session is created. Subsequent pane-focus-in /
+  # after-select-pane hooks (in tmux-worktree.conf) keep it up to date.
+  T set -g @active_role        "$MAIN_LABEL"
 fi
 
 # --add mode: called from hook in background — just switch to the new window, don't attach
