@@ -19,20 +19,27 @@ grep -q "tmux-worktrees" ~/.claude/settings.json 2>/dev/null && echo "installed"
 
 If not installed, tell the user to re-run the install command:
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/rayhon/tmux-worktrees/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/contextforce/tmux-worktrees/main/install.sh)
 ```
 
-### Step 1 — If `tmux-worktree.yaml` is missing at the repo root
+### Step 1 — If `tmux-worktree.yaml` is missing, scan the repo and propose one
 
-Ask the user about their services:
+**Don't ask the user blind.** Inspect the repo first, then present a draft yaml the user can accept or tweak.
 
-> "What services does this repo need? For each one:
-> - A short label (e.g. API, WEB, WORKER)
-> - Directory to run from (relative to repo root)
-> - Start command (e.g. `npm run dev`, `npx wrangler dev`)
-> - Default port"
+Things to look for:
 
-Then generate `tmux-worktree.yaml` at the repo root:
+| Signal | Implies |
+|---|---|
+| `apps/*/package.json` (or `packages/*`, `services/*`) | Monorepo — one service per matching dir |
+| Root `package.json` with a `dev` / `start` script | Single-service repo at root |
+| `wrangler.toml` / `wrangler.jsonc` in a service dir | Cloudflare Worker — needs `--port {PORT}` in cmd, add `.wrangler/state` symlink |
+| `next.config.{js,ts,mjs}` | Next.js — `npm run dev` works as-is (Next reads `PORT`) |
+| `vite.config.{js,ts}` | Vite — `npm run dev` works as-is (Vite reads `PORT`) |
+| `package.json` `dev` containing `wrangler` | Same as wrangler.toml — needs `--port {PORT}` |
+| `package.json` `dev` containing `next` / `vite` / `node` / `tsx` / `nodemon` | Reads `PORT` env — no script change needed |
+| Default port hint | scan `next.config.*` / `wrangler.jsonc` / `vite.config.*` / `.env*` for explicit port |
+
+Then write a draft to the repo root:
 
 ```yaml
 main:
@@ -40,22 +47,42 @@ main:
   cmd: claude
 
 services:
-  - label: <LABEL>
-    cwd: <relative-path>
-    port: <base-port-rounded-down-to-nearest-100>
-    cmd: <start-command> --port {PORT}
-
-  # Cross-service URLs: {LABEL_URL} e.g. {API_URL}
-  # Wrangler services also add:
-  #   inspector_port: 9200
-  #   cmd: npx wrangler dev --port {PORT} --inspector-port {INSPECTOR_PORT}
-  #   symlinks:
-  #     - .wrangler/state
+  - label: <LABEL>             # short, uppercase (WEB, API, WORKER, …)
+    cwd: <relative-path>       # e.g. apps/web  (use "." for single-service repo)
+    port: <base>               # see "Port base convention" below
+    cmd: <start-command>       # see "Cmd patterns" below
+    # Optional:
+    # inspector_port: <base>   # for wrangler --inspector-port
+    # symlinks:                # paths under cwd to symlink from main (e.g. .wrangler/state)
+    #   - .wrangler/state
+    # env:                     # extra exports for the pane
+    #   FOO_URL: "{API_URL}"
 ```
 
-Port base convention: round default down to nearest 100 (8787→8700, 51957→51900, 3000→3000).
+**Cmd patterns** (this is the part users get wrong most often):
 
-### Then launch
+| Framework | Yaml `cmd` | Why |
+|---|---|---|
+| Next.js | `npm run dev` | Next reads `process.env.PORT` automatically |
+| Vite | `npm run dev` | Vite reads `process.env.PORT` automatically |
+| Express / Fastify / plain Node | `npm run dev` | Reads `process.env.PORT` |
+| Wrangler (Worker) | `npx wrangler dev --port {PORT}` | Wrangler ignores `PORT`; needs explicit flag |
+| Other framework that doesn't read PORT | `<cmd> --port {PORT}` or equivalent | Same as wrangler |
+
+The skill exports `PORT=<resolved port>` into each service pane, so any framework that respects the standard `PORT` env var just works without touching the project's `package.json`. Only frameworks that ignore `PORT` (notably wrangler) need an explicit `--port {PORT}` substitution in the yaml cmd.
+
+**Cross-service URLs** — use `{LABEL_URL}` (e.g. `{API_URL}`) in any pane's `cmd` or `env`. The skill substitutes the resolved `http://localhost:<port>`.
+
+**Port base convention**: round each service's default down to the nearest 100 (8787→8700, 51957→51900, 3000→3000). Worktree offsets (+10, +20, …) are added on top.
+
+### Step 2 — Show the draft, ask to confirm
+
+Print the proposed yaml. Tell the user:
+> "I scanned `apps/`, `wrangler.*`, `next.config.*`. Here's the draft. Sound right? Hit ok to write it, or tell me what to change."
+
+Write on confirm. Don't write without confirmation.
+
+### Step 3 — Launch
 
 ```bash
 ~/.claude/skills/tmux-worktrees/scripts/tmux-worktrees.sh
@@ -65,9 +92,10 @@ Port base convention: round default down to nearest 100 (8787→8700, 51957→51
 
 ## Key facts
 
+- **Per-pane PORT:** each service pane has `PORT=<its own offset port>` exported. Framework-aware frameworks (Next, Vite, Express, …) need no `--port` flag.
+- **Named env vars:** every pane also sees `<LABEL>_PORT` and `<LABEL>_URL` for every service, so a WEB pane can reach `$API_URL`.
 - **Navigation:** Alt+arrow moves panes (stays zoomed). Shift+arrow switches worktrees.
 - **Pane jump:** click labels in the status bar, or Alt+m for a picker menu.
 - **Restart:** `tmux -L wt kill-server` then re-run the launcher.
 - **Add a worktree:** `claude --worktree <name>` — hook fires automatically, symlinks env, npm installs, adds tmux window.
-- **Port assignment:** alphabetical order, deterministic — 1st→+10, 2nd→+20, 3rd→+30.
-- **Worktree edit guard:** install.sh registers a `PreToolUse` hook (`prevent-parent-repo-edits.sh`) that blocks `Edit`/`Write`/`MultiEdit`/`NotebookEdit` from touching the parent repo's working tree while the session's `cwd` is inside `.claude/worktrees/<branch>/`. The agent gets an error with the suggested worktree path and has to retry. Prevents the common "agent edits `apps/web/foo.ts` in parent instead of worktree" mistake.
+- **Port assignment:** alphabetical by worktree name, deterministic — 1st→+10, 2nd→+20, 3rd→+30.

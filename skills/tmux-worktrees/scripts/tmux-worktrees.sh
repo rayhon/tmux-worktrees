@@ -241,6 +241,13 @@ for idx in "${!NAMES[@]}"; do
 
     cmd=$(expand_placeholders "${SVC_CMDS[$i]}" "$i" "$OFFSET")
     env_prefix=$(build_env_prefix "$i" "$OFFSET")
+    # Each service pane gets its OWN PORT so plain `npm run dev` etc. work
+    # without --port flags in package.json. Frameworks that read
+    # process.env.PORT (Next.js, Express, Vite, …) bind to the right port
+    # automatically. Wrangler and other frameworks that ignore PORT still
+    # need an explicit --port {PORT} in the yaml cmd.
+    local_port=$((SVC_BASE_PORTS[i] + OFFSET))
+    env_prefix="export PORT=$local_port; ${env_prefix}"
 
     # Gate against the background npm install spawned by link-worktree-env.sh.
     # If install is still running, wait until its pidfile clears. No-op when
