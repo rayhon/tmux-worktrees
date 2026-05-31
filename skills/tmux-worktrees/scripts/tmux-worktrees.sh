@@ -119,6 +119,25 @@ fi
   exit 1
 }
 
+# --- Shared port/URL exports -------------------------------------------------
+# Returns `export <LABEL>_PORT=...; export <LABEL>_URL=...;` for every service,
+# computed from the current worktree's OFFSET. Prepended to every pane's
+# startup command so each pane's shell knows the per-worktree ports of ALL
+# sibling services — without relying on `tmux set-environment`, which is
+# session-scoped and gets clobbered every time a new worktree is added (each
+# new window's set-environment call overwrites the prior worktree's values
+# for the same key).
+build_shared_port_exports() {
+  local offset="$1"
+  local out="" i u p
+  for ((i=0; i<SVC_COUNT; i++)); do
+    u=$(printf '%s' "${SVC_LABELS[$i]}" | tr '[:lower:]' '[:upper:]')
+    p=$((SVC_BASE_PORTS[i] + offset))
+    out+="export ${u}_PORT=$p; export ${u}_URL=http://localhost:$p; "
+  done
+  printf '%s' "$out"
+}
+
 # --- Env prefix construction -------------------------------------------------
 # Reads `.env` at the root (global) and `.services[idx].env` (per-service).
 # Returns a shell-safe `export K="V"; export K2="V2"; ` string with all
@@ -205,7 +224,26 @@ for idx in "${!NAMES[@]}"; do
     continue
   fi
 
-  OFFSET=$(( (idx + 1) * 10 ))
+  # Resolve this worktree's offset. Prefer the value baked into any service's
+  # .env.local / .dev.vars (written by link-worktree-env.sh on WorktreeCreate)
+  # — that's the durable record, set once at creation time and never re-derived.
+  # Falls back to mtime-order (idx+1)*10 only when no env file exists yet
+  # (e.g. WorktreeCreate hook wasn't installed when this worktree was added).
+  OFFSET=0
+  for ((i=0; i<SVC_COUNT; i++)); do
+    base="${SVC_BASE_PORTS[$i]}"
+    cwd="${SVC_CWDS[$i]}"
+    for envf in "$DIR/$cwd/.env.local" "$DIR/$cwd/.dev.vars"; do
+      [[ -f "$envf" ]] || continue
+      port=$(grep -E '^PORT=' "$envf" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
+      [[ -n "$port" ]] || continue
+      OFFSET=$(( port - base ))
+      break 2
+    done
+  done
+  if [[ "$OFFSET" -le 0 ]]; then
+    OFFSET=$(( (idx + 1) * 10 ))
+  fi
 
   if $first && ! $session_exists; then
     # No session yet — create it with the first window.
@@ -220,17 +258,22 @@ for idx in "${!NAMES[@]}"; do
   fi
   TARGET="$SESSION:$w"
 
-  # Expose all service ports + URLs as window-level env vars
-  for ((i=0; i<SVC_COUNT; i++)); do
-    local_upper=$(printf '%s' "${SVC_LABELS[$i]}" | tr '[:lower:]' '[:upper:]')
-    T set-environment -t "$TARGET" "${local_upper}_PORT" "$((SVC_BASE_PORTS[i] + OFFSET))"
-    T set-environment -t "$TARGET" "${local_upper}_URL"  "http://localhost:$((SVC_BASE_PORTS[i] + OFFSET))"
-  done
+  # Per-worktree shared port/URL exports. Sent into every pane's shell so each
+  # pane sees this worktree's sibling ports — independent of other worktrees.
+  #
+  # NOTE: we deliberately do NOT use `tmux set-environment -t TARGET` here.
+  # `-t` on set-environment accepts a target-session, not a target-window, so
+  # the values would land at session scope and every subsequent `new-window`
+  # for a different worktree would silently overwrite the same keys. The bug
+  # showed up as "I created worktree A on port 8797, then worktree B on 8807,
+  # and now A's mcp pane reads 8807 from MCP_PORT". Per-pane shell exports
+  # are the only reliable scoping mechanism in tmux for this.
+  SHARED_EXPORTS=$(build_shared_port_exports "$OFFSET")
 
   # Main pane (right, large)
   MAIN_PANE=$(T display-message -p -t "$TARGET" '#{pane_id}')
   T set -pt "$MAIN_PANE" @role "$MAIN_LABEL"
-  T send-keys -t "$MAIN_PANE" "$MAIN_CMD" C-m
+  T send-keys -t "$MAIN_PANE" "${SHARED_EXPORTS}clear; $MAIN_CMD" C-m
 
   # Service panes (right column, stacked) — CLAUDE stays on the left
   PREV_PANE=""
@@ -247,13 +290,14 @@ for idx in "${!NAMES[@]}"; do
     # automatically. Wrangler and other frameworks that ignore PORT still
     # need an explicit --port {PORT} in the yaml cmd.
     local_port=$((SVC_BASE_PORTS[i] + OFFSET))
-    env_prefix="export PORT=$local_port; ${env_prefix}"
+    # Prepend sibling-service port/URL exports so cross-service lookups (e.g.
+    # web pane reading MCP_PORT to call mcp-hub) work per-worktree.
+    env_prefix="${SHARED_EXPORTS}export PORT=$local_port; ${env_prefix}"
 
     # Gate against the background npm install spawned by link-worktree-env.sh.
-    # If install is still running, wait until its pidfile clears. No-op when
-    # node_modules is already populated (subsequent launches).
-    pf="$DIR/.npm-install.pid"
-    wait_cmd="while [ -f '$pf' ] && p=\$(cat '$pf' 2>/dev/null) && [ -n \"\$p\" ] && kill -0 \"\$p\" 2>/dev/null; do echo '  waiting for npm install (tail $DIR/.npm-install.log)...'; sleep 3; done; rm -f '$pf' 2>/dev/null"
+    # Delegates to the sidecar so the pane cmd stays a one-liner and the escape
+    # rules can't break going through bash → tmux send-keys → shell.
+    wait_cmd="bash ~/.claude/skills/tmux-worktrees/scripts/wait-for-install.sh '$DIR'"
     gated_cmd="${env_prefix}${wait_cmd}; $cmd"
 
     if [[ $i -eq 0 ]]; then
