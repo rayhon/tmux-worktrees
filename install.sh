@@ -27,6 +27,7 @@ files=(
   "skills/tmux-worktrees/scripts/jump-pane.sh"
   "skills/tmux-worktrees/scripts/link-worktree-env.sh"
   "skills/tmux-worktrees/scripts/prevent-parent-repo-edits.sh"
+  "skills/tmux-worktrees/scripts/wait-for-install.sh"
 )
 
 for file in "${files[@]}"; do

@@ -46,11 +46,30 @@ if [[ "$file_path" == "$worktree_root"/* ]]; then
 fi
 
 # At this point: file_path is under the parent repo but NOT under the worktree.
-# Reject and suggest the correct path.
+# Distinguish two flavors of the same trap:
+#   - sibling worktree:  parent_repo/.claude/worktrees/<other-branch>/...
+#   - parent working tree: anything else under parent_repo
 relative="${file_path#$parent_repo/}"
 suggested="$worktree_root/$relative"
 
-cat >&2 <<EOF
+if [[ "$file_path" =~ /\.claude/worktrees/([^/]+)/ ]]; then
+  other_branch="${BASH_REMATCH[1]}"
+  other_relative="${file_path#$parent_repo/.claude/worktrees/$other_branch/}"
+  cat >&2 <<EOF
+BLOCKED: $tool_name to a DIFFERENT worktree while operating in '$worktree_branch'.
+
+  Attempted path:   $file_path
+                    ↑ this is the '$other_branch' worktree — your edits don't belong there.
+
+  Your worktree:    $worktree_root
+  Suggested path:   $worktree_root/$other_relative
+
+If you actually need to change code in '$other_branch', start a new Claude
+session inside that worktree. Cross-worktree edits from this session are
+never the right move.
+EOF
+else
+  cat >&2 <<EOF
 BLOCKED: $tool_name to parent-repo path while operating in worktree '$worktree_branch'.
 
   Attempted path:   $file_path
@@ -63,5 +82,6 @@ Retry the $tool_name with the suggested path. If you genuinely need to touch
 the parent (rare — usually only for tmux-worktrees skill assets), explain why
 to the user and ask them to disable this hook for the call.
 EOF
+fi
 
 exit 2

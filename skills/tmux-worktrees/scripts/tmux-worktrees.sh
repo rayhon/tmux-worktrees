@@ -224,24 +224,36 @@ for idx in "${!NAMES[@]}"; do
     continue
   fi
 
-  # Resolve this worktree's offset. Prefer the value baked into any service's
-  # .env.local / .dev.vars (written by link-worktree-env.sh on WorktreeCreate)
-  # — that's the durable record, set once at creation time and never re-derived.
-  # Falls back to mtime-order (idx+1)*10 only when no env file exists yet
-  # (e.g. WorktreeCreate hook wasn't installed when this worktree was added).
+  # Resolve this worktree's offset from the durable `.wt-port-offset` marker
+  # written by link-worktree-env.sh at creation. That marker is the SINGLE
+  # source of truth, so the per-pane PORT exports below match the ports already
+  # baked into the worktree's env files — no "8787 vs offset" drift. The two
+  # fallbacks (env-file PORT, then positional mtime order) only cover legacy
+  # worktrees created before the marker existed.
   OFFSET=0
-  for ((i=0; i<SVC_COUNT; i++)); do
-    base="${SVC_BASE_PORTS[$i]}"
-    cwd="${SVC_CWDS[$i]}"
-    for envf in "$DIR/$cwd/.env.local" "$DIR/$cwd/.dev.vars"; do
-      [[ -f "$envf" ]] || continue
-      port=$(grep -E '^PORT=' "$envf" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]')
-      [[ -n "$port" ]] || continue
-      OFFSET=$(( port - base ))
-      break 2
+  if [[ -f "$DIR/.wt-port-offset" ]]; then
+    OFFSET=$(tr -dc '0-9' < "$DIR/.wt-port-offset")
+  fi
+  if [[ -z "$OFFSET" || "$OFFSET" -le 0 ]]; then
+    for ((i=0; i<SVC_COUNT; i++)); do
+      base="${SVC_BASE_PORTS[$i]}"
+      cwd="${SVC_CWDS[$i]}"
+      for envf in "$DIR/$cwd/.env.local" "$DIR/$cwd/.dev.vars"; do
+        [[ -f "$envf" ]] || continue
+        # `|| true` is REQUIRED: under `set -euo pipefail`, a no-match grep makes
+        # this pipeline exit non-zero, the `port=$(...)` assignment inherits that
+        # status, and `set -e` aborts the whole script — BEFORE the session is
+        # ever created. That manifests as `tmux -L wt attach` finding no server.
+        # An env file with no PORT= line (e.g. mcp-hub's .dev.vars) is normal, so
+        # swallow the failure and let the `[[ -n "$port" ]]` check below skip it.
+        port=$(grep -E '^PORT=' "$envf" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '[:space:]' || true)
+        [[ -n "$port" ]] || continue
+        OFFSET=$(( port - base ))
+        break 2
+      done
     done
-  done
-  if [[ "$OFFSET" -le 0 ]]; then
+  fi
+  if [[ -z "$OFFSET" || "$OFFSET" -le 0 ]]; then
     OFFSET=$(( (idx + 1) * 10 ))
   fi
 
@@ -252,8 +264,12 @@ for idx in "${!NAMES[@]}"; do
     session_exists=true
   else
     # Session already exists (either pre-existing, or we just created it
-    # in a previous iteration of this loop). Add a window.
-    T new-window -t "$SESSION" -c "$DIR" -n "$w"
+    # in a previous iteration of this loop). Add a window. The trailing colon
+    # in "$SESSION:" tells tmux to pick the next FREE index — without it,
+    # `new-window -t "$SESSION"` targets the current window's index and fails
+    # with "create window failed: index 1 in use" under base-index 1 when
+    # adding to an already-running session (e.g. a second `--add`).
+    T new-window -t "$SESSION:" -c "$DIR" -n "$w"
     first=false
   fi
   TARGET="$SESSION:$w"
