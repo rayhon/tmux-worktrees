@@ -77,7 +77,7 @@ You only need to attach once — re-running `/tmux-worktrees` after adding workt
 
 ## Navigation
 
-Mouse mode is **off by default** — it causes clipboard wipes and copy-mode traps inside VS Code/iTerm2. Everything is keyboard-driven:
+Mouse mode is **on by default** — the scroll wheel scrolls pane/Claude history and a drag-select copies to your system clipboard. Everything is also keyboard-driven:
 
 | Action | Keys |
 |---|---|
@@ -85,22 +85,32 @@ Mouse mode is **off by default** — it causes clipboard wipes and copy-mode tra
 | Switch between worktrees | `Shift + ←/→` |
 | Worktree picker (with live preview) | `Alt + w` |
 | Pane picker | `Alt + m` |
-| Toggle mouse mode | `Ctrl+b m` — turn on briefly when you need clickable status / scroll-wheel |
+| Toggle mouse mode | `Ctrl+b m` — turn off briefly for clean native terminal selection |
 
 The active pane shows up two ways: a **bright pane** (others dim gray) and the **matching label highlighted in yellow** in the top status bar.
 
 ### Copy/paste
 
-Use your **terminal's own selection** — never tmux's. Hold the bypass key while dragging:
+With the default `mouse on`, **hold your terminal's bypass modifier and drag** — on iTerm2/Terminal.app that's **⌥ Option + drag**. Your terminal's native selection takes over, highlight stays, ⌘C copies, ⌘V pastes. No tmux highlight, no OSC 52, no clipboard wipes.
 
-| Terminal | Hold while dragging |
+(A plain drag without the modifier is captured by tmux's mouse mode and piped to the system clipboard via `pbcopy` / `wl-copy` / `xclip` — that also works, but Option+drag gives the cleaner native selection.)
+
+Hold the per-terminal bypass key while dragging:
+
+| Terminal | Hold while dragging (mouse mode ON) |
 |---|---|
 | iTerm2, Terminal.app | **⌥ Option** |
 | Alacritty, Ghostty, WezTerm | **⇧ Shift** |
 | Kitty | **Ctrl+Shift** |
-| VS Code terminal | (with mouse off in tmux) just drag normally |
 
-That gives you native selection — highlight stays, ⌘C copies, ⌘V pastes into the active pane. No tmux mouse mode, no OSC 52, no clipboard wipes.
+### Scrolling Claude's history
+
+With the default `mouse on`, the scroll wheel enters tmux copy-mode and scrolls the pane's history (including Claude's chat) directly — no extra setup. If you've toggled mouse OFF via `Ctrl+b m`, the wheel falls back to your terminal's own scrollback instead; in that case use the keyboard:
+
+| Approach | How |
+|---|---|
+| **Wheel (default, mouse ON)** | Just scroll — tmux copy-mode shows the pane history. Press `q` to exit copy-mode. |
+| **Keyboard (works everywhere)** | `fn + shift + ↑` / `fn + shift + ↓` on a Mac laptop (= Shift+PageUp/PageDown). iTerm sends these to the alt-screen app directly. |
 
 ### macOS Option+arrow inside VS Code
 
