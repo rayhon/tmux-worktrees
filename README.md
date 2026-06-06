@@ -135,6 +135,55 @@ In iTerm2/Terminal.app, just enable Option-as-Meta in profile settings.
 - **`{PORT}`** in the cmd is replaced with the actual assigned port.
 - **`{LABEL_URL}`** gives you another service's URL (e.g. `{API_URL}`).
 
+## tmux model — why windows, not sessions
+
+tmux always nests four layers: **server → session → window → pane**. You can't skip one — a pane lives in a window, a window in a session, a session in a server. This skill maps worktrees onto that hierarchy like so:
+
+```
+SOCKET "wt"   (-L wt)            ← one tmux server, isolated from your default tmux
+└── SESSION "wt"                 ← one session = the whole dashboard
+    ├── WINDOW "feature-xyz"     ← one window per WORKTREE
+    │   ├── pane CLAUDE  (left, large)
+    │   ├── pane API
+    │   └── pane WEB             ← one pane per SERVICE
+    ├── WINDOW "bugfix-abc"      ← next worktree
+    └── WINDOW "main"
+```
+
+| tmux layer | maps to | count |
+|---|---|---|
+| socket (`-L wt`) | this skill's whole tmux server | 1 |
+| session (`wt`) | the dashboard | 1 |
+| **window** | **one worktree** | N worktrees |
+| pane | one service in that worktree | one per `services:` entry (+ CLAUDE) |
+
+So worktrees are separated by **windows**, not by sessions or sockets.
+
+### Why one session with many windows (not a session per worktree)
+
+The goal is *glance across every worktree from a single attached client*. Windows deliver that; separate sessions don't:
+
+- **One attach sees everything.** `tmux -L wt attach -t wt` drops you into all worktrees at once — flip between them with `Shift + ←/→`. Session-per-worktree would need a separate attach (or a session-picker hop) for each.
+- **One status bar lists them all.** Window tabs across the top *are* the worktree selector. A session only shows its own windows in the bar.
+- **Adding a worktree is just `new-window`.** The `WorktreeCreate` hook appends a window to the live session — no re-attach. `new-session` would spawn a detached session you'd have to find and attach separately.
+- **Same nesting depth either way.** Session-per-worktree isn't "less nested" — it's N sessions each holding one window, vs. 1 session holding N windows. Same number of layers; the single-session layout just keeps worktrees as siblings under one roof so the combined view works.
+
+Session-per-worktree *would* win if you wanted each worktree fully isolated (detach one without seeing the others), or multiple people attaching to different worktrees independently. That's not this use case — here it's **one dev, one screen, many worktrees, flip fast**.
+
+### Why a dedicated socket (`-L wt`)
+
+Separate concern from worktree layout. The `-L wt` socket runs this dashboard as its **own tmux server**, distinct from your normal `default` tmux. So:
+
+- A stray `tmux kill-server` (or `tmux -L wt kill-server` to rebuild) only hits this dashboard — never your unrelated tmux work.
+- No session/window name clashes with whatever else you run.
+- `tmux -L wt ls` shows only this skill's sessions; plain `tmux ls` shows your default server — two servers, blind to each other.
+
+Every command targeting the dashboard repeats `-L wt`; without it you're talking to the `default` server, which won't have a `wt` session. Handy alias:
+
+```bash
+alias wt='tmux -L wt'   # then: wt attach -t wt   ·   wt ls   ·   wt kill-server
+```
+
 ## Common pitfalls
 
 Worktrees run on offset ports (worktree #1 → +10, #2 → +20, …), but every env file in the worktree is symlinked from main, where the values were written for the original port (3000, 8787, etc). When an app reads its **own** URL from env, you get a mismatch — the dev server listens on `:3010` but thinks it's still `:3000`. Symptoms range from broken auth callbacks to silently-wrong API targets.

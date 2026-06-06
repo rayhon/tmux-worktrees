@@ -93,6 +93,63 @@ for ((j=0; j<gl_count; j++)); do
   GLOBAL_SYMLINKS+=("$(yq ".symlinks[$j]" "$YAML")")
 done
 
+# --- Global hybrid-mirror list -----------------------------------------------
+# Paths from `mirror_with_sqlite_copies:` get the hybrid treatment: symlink
+# whole subtrees that have NO SQLite descendants, COPY SQLite lock files in
+# place. Designed for `.wrangler/state` so each worktree owns its own
+# miniflare SQLite locks (workerd needs that) while sharing the big
+# immutable R2 blobs with parent.
+GLOBAL_HYBRID_MIRRORS=()
+hm_count=$(yq '.mirror_with_sqlite_copies | length' "$YAML" 2>/dev/null || echo 0)
+[[ "$hm_count" == "null" ]] && hm_count=0
+for ((j=0; j<hm_count; j++)); do
+  GLOBAL_HYBRID_MIRRORS+=("$(yq ".mirror_with_sqlite_copies[$j]" "$YAML")")
+done
+
+# --- mirror_with_sqlite_copies: recursive hybrid mirror ----------------------
+# If src has no *.sqlite* anywhere in its tree, symlink it whole (cheap).
+# Otherwise: real dir, recurse into children. Sqlite files → cp. Other
+# files → individual symlink. Other dirs → recurse.
+hybrid_mirror() {
+  local src="$1" dst="$2"
+  if [[ ! -d "$src" ]]; then
+    [[ -L "$dst" ]] && rm -f "$dst"
+    ln -sfn "$src" "$dst"
+    return
+  fi
+  # No SQLite anywhere under here → one symlink covers the whole subtree.
+  if ! find "$src" -name '*.sqlite' -o -name '*.sqlite-shm' \
+          -o -name '*.sqlite-wal' -o -name '*.sqlite-journal' \
+          2>/dev/null | grep -q .; then
+    [[ -L "$dst" ]] && rm -f "$dst"
+    [[ -d "$dst" ]] && return   # already real-dir from a prior partial mirror — leave it
+    ln -sfn "$src" "$dst"
+    return
+  fi
+  # Has SQLite — real dir + recurse children.
+  [[ -L "$dst" ]] && rm -f "$dst"
+  mkdir -p "$dst"
+  local entry name
+  shopt -s nullglob dotglob
+  for entry in "$src"/*; do
+    name="$(basename "$entry")"
+    case "$name" in
+      *.sqlite|*.sqlite-shm|*.sqlite-wal|*.sqlite-journal)
+        # Lock file — copy only if missing (preserve worktree's own writes).
+        [[ -e "$dst/$name" ]] || cp "$entry" "$dst/$name"
+        ;;
+      *)
+        if [[ -d "$entry" ]]; then
+          hybrid_mirror "$entry" "$dst/$name"
+        else
+          [[ -e "$dst/$name" ]] || ln -sfn "$entry" "$dst/$name"
+        fi
+        ;;
+    esac
+  done
+  shopt -u nullglob dotglob
+}
+
 # --- rewrite_env: copy an env file and replace each base port -----------------
 # Args: $1 = source file, $2 = destination file
 rewrite_env() {
@@ -162,6 +219,21 @@ for ((i=0; i<SVC_COUNT; i++)); do
       fi
     done
   fi
+
+  # Hybrid mirror: symlink subtrees, copy SQLite lock files in place. Each
+  # worktree gets its own SQLite locks (so wrangler dev can run in parallel)
+  # while immutable blob dirs (r2/<bucket>/blobs/, 20GB) stay symlinked to
+  # parent for ~zero disk cost.
+  if [[ ${#GLOBAL_HYBRID_MIRRORS[@]} -gt 0 ]]; then
+    for rel_path in "${GLOBAL_HYBRID_MIRRORS[@]}"; do
+      src_path="$src/$rel_path"
+      dst_path="$dst/$rel_path"
+      [[ -e "$src_path" ]] || continue
+      mkdir -p "$(dirname "$dst_path")"
+      hybrid_mirror "$src_path" "$dst_path"
+      echo "    hybrid-mirror $rel_path (blobs symlinked, SQLite copied)" >&2
+    done
+  fi
 done
 
 # --- Background npm install (first time only) --------------------------------
@@ -179,19 +251,44 @@ if [[ ! -d "$WORKTREE_ABS/node_modules" ]] || [[ ! -f "$WORKTREE_ABS/.npm-instal
   echo "" >&2
   echo "→ Starting npm install in background (detached)" >&2
   echo "  Watch: tail -f $LOG" >&2
-  ( setsid bash -c "
+  # Use setsid when available (Linux), else nohup (macOS doesn't ship setsid).
+  # `& disown` makes the subshell exit 0 immediately, so checking $? after
+  # backgrounding won't catch a missing setsid — branch on existence instead.
+  if command -v setsid >/dev/null 2>&1; then
+    ( setsid bash -c "
       echo \$\$ > '$PIDFILE'
       trap 'rm -f \"$PIDFILE\"' EXIT
       cd '$WORKTREE_ABS' && npm install && touch '$OKFILE'
-    " >"$LOG" 2>&1 </dev/null & disown ) 2>/dev/null \
-  || \
-  ( nohup bash -c "
+    " >"$LOG" 2>&1 </dev/null & disown ) 2>/dev/null
+  else
+    ( nohup bash -c "
       echo \$\$ > '$PIDFILE'
       trap 'rm -f \"$PIDFILE\"' EXIT
       cd '$WORKTREE_ABS' && npm install && touch '$OKFILE'
-    " >"$LOG" 2>&1 </dev/null & disown )
+    " >"$LOG" 2>&1 </dev/null & disown ) 2>/dev/null
+  fi
 else
   echo "  node_modules + install sentinel present — skipping npm install" >&2
+fi
+
+# --- Project post-create hooks -----------------------------------------------
+# The project can declare `post_create:` in tmux-worktree.yaml — a list of shell
+# commands run ONCE here, from the worktree root, after env is wired. This keeps
+# project-specific setup (e.g. installing git hooks) out of the generic skill
+# and out of the global Claude WorktreeCreate hook. Commands should be
+# idempotent (they run on every worktree creation). Failures are warned, not
+# fatal — a bad post_create step shouldn't abort worktree wiring.
+pc_count=$(yq '.post_create | length' "$YAML" 2>/dev/null || echo 0)
+[[ "$pc_count" =~ ^[0-9]+$ ]] || pc_count=0
+if [[ "$pc_count" -gt 0 ]]; then
+  echo "→ Running $pc_count post_create command(s) from tmux-worktree.yaml…" >&2
+  for ((p=0; p<pc_count; p++)); do
+    pc_cmd="$(yq -r ".post_create[$p]" "$YAML")"
+    [[ -n "$pc_cmd" && "$pc_cmd" != "null" ]] || continue
+    echo "  • $pc_cmd" >&2
+    ( cd "$WORKTREE_ABS" && bash -c "$pc_cmd" ) >&2 \
+      || echo "  ⚠ post_create failed (non-fatal): $pc_cmd" >&2
+  done
 fi
 
 echo "" >&2
