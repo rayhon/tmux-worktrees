@@ -74,6 +74,29 @@ export TMUX_WT_CONF="$CONF"
 
 T() { tmux -L "$SOCKET" "$@"; }
 
+# --- Prune stale windows -----------------------------------------------------
+# Removing a git worktree (via `git worktree remove`, `claude` exit, or manual
+# rm) does NOT touch tmux — Claude Code has no WorktreeRemove hook event, and a
+# raw `git worktree remove` can't fire one anyway. So windows for deleted
+# worktrees linger with panes sitting in a now-deleted directory.
+#
+# We reconcile on every launcher run instead (full launch AND `--add` from the
+# WorktreeCreate hook): kill any session window whose worktree dir no longer
+# exists. Keyed on dir existence — NOT on the NAMES arg list — so calling the
+# launcher with an explicit subset of worktrees never kills the others.
+prune_stale_windows() {
+  T has-session -t "$SESSION" 2>/dev/null || return 0
+  local wname
+  while IFS= read -r wname; do
+    [[ -n "$wname" ]] || continue
+    # A window whose name maps to a live worktree dir stays. Anything else is a
+    # window for a worktree that's been removed → kill it.
+    [[ -d "$REPO/.claude/worktrees/$wname" ]] && continue
+    echo "⟲ pruning stale tmux window '$wname' (worktree removed)" >&2
+    T kill-window -t "$SESSION:$wname" 2>/dev/null || true
+  done < <(T list-windows -t "$SESSION" -F '#{window_name}' 2>/dev/null)
+}
+
 # --- Flag parsing (must happen before NAMES population) ----------------------
 # --add NAME: called from WorktreeCreate hook — adds one window to a running
 # session without attaching. Falls through to full launch if no session yet.
@@ -81,6 +104,15 @@ ADD_NAME=""
 if [[ "${1:-}" == "--add" ]]; then
   ADD_NAME="${2:-}"
   shift 2 2>/dev/null || true
+fi
+
+# --prune: reconcile stale windows against the live worktree set, then exit.
+# Lets a worktree-removal flow (or the user) clean tmux without a full launch:
+#   ~/.claude/skills/tmux-worktrees/scripts/tmux-worktrees.sh --prune
+if [[ "${1:-}" == "--prune" ]]; then
+  SESSION=${TMUX_SESSION:-wt}
+  prune_stale_windows
+  exit 0
 fi
 
 # --- Worktree list -----------------------------------------------------------
@@ -192,6 +224,11 @@ expand_placeholders() {
 # --- Session -----------------------------------------------------------------
 session_exists=false
 T has-session -t "$SESSION" 2>/dev/null && session_exists=true
+
+# Reconcile FIRST: drop windows for worktrees that have since been removed, so a
+# stale window can never outlive its worktree past the next launcher run. Must
+# happen before the attach below (attach execs and never returns).
+prune_stale_windows
 
 attach_or_instruct() {
   if [[ -t 0 && -t 1 ]]; then
@@ -306,9 +343,18 @@ for idx in "${!NAMES[@]}"; do
     # automatically. Wrangler and other frameworks that ignore PORT still
     # need an explicit --port {PORT} in the yaml cmd.
     local_port=$((SVC_BASE_PORTS[i] + OFFSET))
+    # Also export INSPECTOR_PORT when the service declares one in yaml.
+    # Lets `npm run dev` in the pane pick up the worktree-offset inspector
+    # port directly (e.g. `wrangler dev --inspector-port ${INSPECTOR_PORT:-…}`)
+    # without needing a yaml-supplied CLI flag — so manual restarts after
+    # Ctrl+C work without inspector-port collisions between worktrees.
+    inspector_export=""
+    if [[ "${SVC_BASE_INSP[$i]}" != "0" ]]; then
+      inspector_export="export INSPECTOR_PORT=$((SVC_BASE_INSP[$i] + OFFSET)); "
+    fi
     # Prepend sibling-service port/URL exports so cross-service lookups (e.g.
     # web pane reading MCP_PORT to call mcp-hub) work per-worktree.
-    env_prefix="${SHARED_EXPORTS}export PORT=$local_port; ${env_prefix}"
+    env_prefix="${SHARED_EXPORTS}export PORT=$local_port; ${inspector_export}${env_prefix}"
 
     # Gate against the background npm install spawned by link-worktree-env.sh.
     # Delegates to the sidecar so the pane cmd stays a one-liner and the escape
@@ -324,6 +370,10 @@ for idx in "${!NAMES[@]}"; do
 
     PREV_PANE=$(T display-message -p -t "$TARGET" '#{pane_id}')
     T set -pt "$PREV_PANE" @role "$lbl"
+    # Persist the launch command on the pane so `prefix r` can re-run it
+    # after the user Ctrl+C's the dev server. send-keys leaves no record
+    # tmux can recover on its own, so we have to stash it ourselves.
+    T set -pt "$PREV_PANE" @start_cmd "$gated_cmd"
     T send-keys -t "$PREV_PANE" "$gated_cmd" C-m
   done
 

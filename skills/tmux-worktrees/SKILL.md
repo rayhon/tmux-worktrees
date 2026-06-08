@@ -98,4 +98,5 @@ Write on confirm. Don't write without confirmation.
 - **Pane jump:** click labels in the status bar, or Alt+m for a picker menu.
 - **Restart:** `tmux -L wt kill-server` then re-run the launcher.
 - **Add a worktree:** `claude --worktree <name>` — hook fires automatically, symlinks env, npm installs, adds tmux window.
+- **Remove a worktree:** there is no WorktreeRemove hook (Claude Code doesn't emit one, and a raw `git worktree remove` couldn't fire it anyway). Instead the launcher **reconciles on every run**: any window whose worktree dir no longer exists is killed. So a stale window self-cleans on the next `/tmux-worktrees` launch or the next `claude --worktree` (which calls `--add`). To clean immediately without a full launch: `~/.claude/skills/tmux-worktrees/scripts/tmux-worktrees.sh --prune`. Pruning is keyed on dir existence, so passing an explicit subset of worktrees to the launcher never kills the others.
 - **Port assignment:** alphabetical by worktree name, deterministic — 1st→+10, 2nd→+20, 3rd→+30.
