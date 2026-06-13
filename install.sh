@@ -60,7 +60,7 @@ cfg.setdefault("hooks", {})["WorktreeCreate"] = [
                     "REPO=$(git rev-parse --show-toplevel); "
                     "SAFE=${NAME//\\\\//-}; "
                     "DIR=\"$REPO/.claude/worktrees/$SAFE\"; "
-                    "git -C \"$REPO\" worktree add \"$DIR\" -b \"worktree-$NAME\" origin/HEAD >&2 || true; "
+                    "git -C \"$REPO\" worktree add \"$DIR\" -b \"worktree-$NAME\" HEAD >&2 || true; "
                     "if [[ -f \"$REPO/tmux-worktree.yaml\" ]]; then "
                     "  bash ~/.claude/skills/tmux-worktrees/scripts/link-worktree-env.sh \"$DIR\" >&2; "
                     "  bash ~/.claude/skills/tmux-worktrees/scripts/tmux-worktrees.sh --add \"$SAFE\" >&2; "

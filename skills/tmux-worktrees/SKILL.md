@@ -90,6 +90,31 @@ Write on confirm. Don't write without confirmation.
 
 ---
 
+## Creating a worktree — two paths
+
+**A. You, from a terminal:** `claude --worktree <name>` — fires the WorktreeCreate hook (wires env, offset ports, npm install) AND opens a fresh interactive Claude session + tmux window you're attached to.
+
+**B. The agent, in-session (no terminal needed from you):** the assistant can do everything except bind your terminal:
+1. `EnterWorktree <name>` tool — fires the **same** WorktreeCreate hook (env + offset ports), switches the session into the worktree.
+2. Run the launcher **headless** to build the tmux session + start every dev server in its pane:
+   ```bash
+   ~/.claude/skills/tmux-worktrees/scripts/tmux-worktrees.sh <name> < /dev/null
+   ```
+   With no TTY it builds + starts servers, then prints the attach line instead of attaching.
+3. **You run the one universal command to watch the panes:**
+   ```bash
+   tmux -L wt attach -t wt
+   ```
+
+Split the work this way: **agent = create + wire + launch + servers; you = `tmux -L wt attach`.** The launcher's machinery stays hidden behind the agent; you only ever type the attach command everyone already knows.
+
+**Gotchas (macOS):**
+- **No `timeout`** — never wrap the launcher in `timeout` (it's GNU-only; exits 127). Background it instead.
+- **mcp-hub offsets from its own base 8787** → +20 = 8807, etc. (web 3000→3020, agent 51957→51977). Don't assume a single 87xx base.
+- The WorktreeCreate hook branches new worktrees from **local `HEAD`** (not `origin/HEAD`) — so they carry your local-only commits. `git pull` first if you also want the remote's latest.
+
+---
+
 ## Key facts
 
 - **Per-pane PORT:** each service pane has `PORT=<its own offset port>` exported. Framework-aware frameworks (Next, Vite, Express, …) need no `--port` flag.
@@ -97,6 +122,6 @@ Write on confirm. Don't write without confirmation.
 - **Navigation:** Alt+arrow moves panes (stays zoomed). Shift+arrow switches worktrees.
 - **Pane jump:** click labels in the status bar, or Alt+m for a picker menu.
 - **Restart:** `tmux -L wt kill-server` then re-run the launcher.
-- **Add a worktree:** `claude --worktree <name>` — hook fires automatically, symlinks env, npm installs, adds tmux window.
+- **Add a worktree:** `claude --worktree <name>` (you, terminal) OR `EnterWorktree <name>` + headless launcher (the agent, in-session) — see "Creating a worktree" above. Hook fires either way: symlinks env, offset ports, npm installs, adds tmux window.
 - **Remove a worktree:** there is no WorktreeRemove hook (Claude Code doesn't emit one, and a raw `git worktree remove` couldn't fire it anyway). Instead the launcher **reconciles on every run**: any window whose worktree dir no longer exists is killed. So a stale window self-cleans on the next `/tmux-worktrees` launch or the next `claude --worktree` (which calls `--add`). To clean immediately without a full launch: `~/.claude/skills/tmux-worktrees/scripts/tmux-worktrees.sh --prune`. Pruning is keyed on dir existence, so passing an explicit subset of worktrees to the launcher never kills the others.
 - **Port assignment:** alphabetical by worktree name, deterministic — 1st→+10, 2nd→+20, 3rd→+30.
