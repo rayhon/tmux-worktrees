@@ -44,7 +44,13 @@ command -v herdr >/dev/null 2>&1 || { echo "herdr not found — https://herdr.de
 command -v jq >/dev/null 2>&1 || { echo "jq not found (brew install jq)" >&2; exit 1; }
 command -v yq >/dev/null 2>&1 || { echo "→ yq not found, installing via brew..." >&2; brew install yq; }
 
-[[ $# -gt 0 ]] || { echo "usage: $0 <worktree-dir> [<worktree-dir> ...]" >&2; exit 1; }
+# --sync-labels: relabel every existing tab in this repo's workspace to its
+# worktree's CURRENT branch (no dirs needed). Wire it to a git post-checkout
+# hook to keep tab names tracking the active branch automatically.
+SYNC_ONLY=""
+if [[ "${1:-}" == "--sync-labels" ]]; then SYNC_ONLY=1; shift; fi
+
+[[ -n "$SYNC_ONLY" || $# -gt 0 ]] || { echo "usage: $0 [--sync-labels] <worktree-dir[=name]> ..." >&2; exit 1; }
 
 H() { HERDR_SESSION="$SESSION" herdr "$@" --session "$SESSION"; }
 
@@ -132,6 +138,22 @@ resolve_offset() {
   printf '%s' "$off"
 }
 
+# Tab label for a worktree: explicit override → current branch → <basename>-<slot>.
+# Reads the branch LIVE so it reflects the worktree's current checkout.
+label_for_dir() {
+  local dir="$1" override="${2:-}" w slot
+  if [[ -n "$override" ]]; then
+    w="$override"
+  else
+    w=$(git -C "$dir" symbolic-ref --short -q HEAD 2>/dev/null || true)
+    if [[ -z "$w" ]]; then
+      slot=$(printf '%s\n' "$dir" | sed -nE 's#.*/\.treehouse/[^/]+/([0-9]+)(/|$).*#\1#p')
+      w="$(basename "$dir")${slot:+-$slot}"
+    fi
+  fi
+  printf '%s' "${w//\//-}"
+}
+
 # --- herdr server + workspace ------------------------------------------------
 server_ensure() {
   local running i
@@ -179,6 +201,28 @@ prune_seeded_default_tab() {
 
 # --- Main --------------------------------------------------------------------
 server_ensure || exit 1
+
+# --sync-labels: relabel existing tabs to their worktree's current branch, then
+# exit. Does NOT create a workspace — nothing to sync if none exists yet.
+if [[ -n "$SYNC_ONLY" ]]; then
+  WSID=$(H workspace list 2>/dev/null | jq -r --arg want "$WS_LABEL" \
+    '.result.workspaces[]? | select(.label==$want) | .workspace_id' 2>/dev/null | head -1)
+  [[ -n "$WSID" ]] || { echo "no herdr workspace '$WS_LABEL' to sync" >&2; exit 0; }
+  synced=0
+  while IFS=$'\t' read -r tab_id cwd; do
+    [[ -n "$cwd" && -d "$cwd" ]] || continue
+    want=$(label_for_dir "$cwd" "")
+    cur=$(H tab list --workspace "$WSID" 2>/dev/null | jq -r --arg t "$tab_id" \
+      '.result.tabs[]? | select(.tab_id==$t) | .label' 2>/dev/null)
+    if [[ -n "$want" && "$want" != "$cur" ]]; then
+      H tab rename "$tab_id" "$want" >/dev/null 2>&1 && { echo "↻ '$cur' → '$want'" >&2; synced=$((synced+1)); }
+    fi
+  done < <(H pane list --workspace "$WSID" 2>/dev/null | jq -r --arg m "$MAIN_LABEL" \
+    '.result.panes[]? | select(.label==$m) | "\(.tab_id)\t\(.cwd)"' 2>/dev/null)
+  echo "✓ synced $synced tab label(s) to current branch" >&2
+  exit 0
+fi
+
 workspace_ensure || { echo "failed to ensure herdr workspace '$WS_LABEL'" >&2; exit 1; }
 
 pos=0
@@ -191,27 +235,38 @@ for arg in "$@"; do
   DIR="$arg"; LBL=""
   [[ "$arg" == *=* ]] && { DIR="${arg%%=*}"; LBL="${arg#*=}"; }
   [[ -d "$DIR" ]] || { echo "⚠ worktree dir '$DIR' not found — skipping" >&2; continue; }
-  DIR=$(cd "$DIR" && pwd)
+  # Physical path (-P): herdr reports pane cwd resolved (macOS /private/var), so
+  # resolve here too or the existing-tab match below misses.
+  DIR=$(cd "$DIR" && pwd -P)
   pos=$((pos + 1))
-  # Tab label priority: explicit <name> → checked-out branch → <basename>-<slot>.
-  # Treehouse pool slots share the basename (…/<slot>/agent-board) and sit at
-  # detached HEAD, so without an explicit name or a branch they'd read as bare
-  # slot numbers — hence the explicit-name option. Slashes → dashes.
-  if [[ -n "$LBL" ]]; then
-    w="$LBL"
-  else
-    w=$(git -C "$DIR" symbolic-ref --short -q HEAD 2>/dev/null || true)
-    if [[ -z "$w" ]]; then
-      slot=$(printf '%s\n' "$DIR" | sed -nE 's#.*/\.treehouse/[^/]+/([0-9]+)(/|$).*#\1#p')
-      w="$(basename "$DIR")${slot:+-$slot}"
-    fi
-  fi
-  w="${w//\//-}"
+  # Tab label priority: explicit <name> → current branch → <basename>-<slot>.
+  # (Treehouse pool slots share the basename and sit at detached HEAD, so absent
+  # an explicit name or a branch they read as bare slot numbers.)
+  w=$(label_for_dir "$DIR" "$LBL")
 
-  # Idempotent: skip a worktree tab that already exists.
-  if H tab list --workspace "$WSID" 2>/dev/null | jq -e --arg w "$w" \
-       '.result.tabs[]? | select(.label==$w)' >/dev/null 2>&1; then
-    echo "· tab '$w' already exists — skipping" >&2; continue
+  # Idempotent, keyed on the WORKTREE DIR (a pane's cwd), not the label — so a
+  # tab that already exists for this worktree is RE-LABELED to the current name
+  # (branch may have changed since it was created; a detached slot later checked
+  # out onto a branch should now show that branch). Re-running the launcher thus
+  # syncs every tab's label to its worktree's current branch.
+  # Match by realpath, not raw string: herdr may report a pane cwd via a symlink
+  # form (macOS /var vs /private/var) that won't string-equal our resolved DIR.
+  existing_tab=""
+  while IFS=$'\t' read -r _tid _tcwd; do
+    [[ -n "$_tcwd" ]] || continue
+    _rp=$(cd "$_tcwd" 2>/dev/null && pwd -P) || continue
+    if [[ "$_rp" == "$DIR" ]]; then existing_tab="$_tid"; break; fi
+  done < <(H pane list --workspace "$WSID" 2>/dev/null | jq -r --arg m "$MAIN_LABEL" \
+    '.result.panes[]? | select(.label==$m) | "\(.tab_id)\t\(.cwd)"' 2>/dev/null)
+  if [[ -n "$existing_tab" ]]; then
+    cur=$(H tab list --workspace "$WSID" 2>/dev/null | jq -r --arg t "$existing_tab" \
+      '.result.tabs[]? | select(.tab_id==$t) | .label' 2>/dev/null)
+    if [[ "$cur" != "$w" ]]; then
+      H tab rename "$existing_tab" "$w" >/dev/null 2>&1 && echo "↻ relabeled '$cur' → '$w'" >&2
+    else
+      echo "· tab '$w' already current — skipping" >&2
+    fi
+    continue
   fi
 
   OFFSET=$(resolve_offset "$DIR" $(( pos * 10 )))
