@@ -147,8 +147,10 @@ label_for_dir() {
   else
     w=$(git -C "$dir" symbolic-ref --short -q HEAD 2>/dev/null || true)
     if [[ -z "$w" ]]; then
+      # Detached HEAD = no branch = a free/released worktree. Show it as free
+      # (never a bare commit sha), keyed to its treehouse slot when there is one.
       slot=$(printf '%s\n' "$dir" | sed -nE 's#.*/\.treehouse/[^/]+/([0-9]+)(/|$).*#\1#p')
-      w="$(basename "$dir")${slot:+-$slot}"
+      w="free${slot:+-$slot}"
     fi
   fi
   printf '%s' "${w//\//-}"
@@ -232,16 +234,24 @@ for arg in "$@"; do
   #   <dir>=<name>       → tab named exactly <name> (branch/purpose/agent id)
   # The explicit form is the reliable "way to tell which worktree is which" when
   # a treehouse slot is at detached HEAD (no branch to read).
+  # <dir>          → auto-name (current branch, else <basename>-<slot>)
+  # <dir>=<name>   → CREATE/switch branch <name> in the worktree, then name the
+  #                  tab <name>. So the branch exists before work starts and the
+  #                  tab, git, and Claude's statusline all show it from launch.
   DIR="$arg"; LBL=""
   [[ "$arg" == *=* ]] && { DIR="${arg%%=*}"; LBL="${arg#*=}"; }
   [[ -d "$DIR" ]] || { echo "⚠ worktree dir '$DIR' not found — skipping" >&2; continue; }
-  # Physical path (-P): herdr reports pane cwd resolved (macOS /private/var), so
-  # resolve here too or the existing-tab match below misses.
-  DIR=$(cd "$DIR" && pwd -P)
+  DIR=$(cd "$DIR" && pwd -P)   # physical path: match herdr's resolved pane cwd
   pos=$((pos + 1))
-  # Tab label priority: explicit <name> → current branch → <basename>-<slot>.
-  # (Treehouse pool slots share the basename and sit at detached HEAD, so absent
-  # an explicit name or a branch they read as bare slot numbers.)
+  # Explicit name = the branch this worktree is for: create it (or switch if it
+  # already exists) BEFORE launching, so nothing ever shows a detached sha.
+  if [[ -n "$LBL" ]]; then
+    if git -C "$DIR" show-ref --verify --quiet "refs/heads/$LBL"; then
+      git -C "$DIR" checkout -q "$LBL" 2>/dev/null || echo "⚠ '$LBL' may be checked out in another worktree — skipping checkout" >&2
+    else
+      git -C "$DIR" checkout -q -b "$LBL" 2>/dev/null || echo "⚠ could not create branch '$LBL'" >&2
+    fi
+  fi
   w=$(label_for_dir "$DIR" "$LBL")
 
   # Idempotent, keyed on the WORKTREE DIR (a pane's cwd), not the label — so a
