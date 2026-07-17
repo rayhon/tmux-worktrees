@@ -68,5 +68,5 @@ fi
 
 echo "" >&2
 echo "✓ ready. attach:  herdr --session $SESSION   → tab ${BRANCH//\//-}" >&2
-echo "  free it later:  $SC/wt-down.sh \"$SLOT\" $SESSION" >&2
+echo "  done later (standby, safe):  $SC/wt-down.sh \"$SLOT\" $SESSION" >&2
 printf '%s\n' "$SLOT"

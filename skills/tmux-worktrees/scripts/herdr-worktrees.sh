@@ -169,7 +169,12 @@ server_ensure() {
   local running i
   running=$(H status --json 2>/dev/null | jq -r '.server.running // false' 2>/dev/null)
   [[ "$running" == "true" ]] && return 0
-  ( H server >/dev/null 2>&1 & ) || return 1
+  # CRITICAL: start the server from a NEUTRAL cwd ($HOME), never the slot. The
+  # launcher runs with cwd=slot, so a bare `herdr server` would inherit the slot
+  # as its cwd — and `treehouse return` kills processes by cwd, so returning the
+  # slot would then kill the whole herdr session. Starting from $HOME makes the
+  # server immune to slot returns.
+  ( cd "$HOME" && H server >/dev/null 2>&1 & ) || return 1
   for i in $(seq 1 20); do
     running=$(H status --json 2>/dev/null | jq -r '.server.running // false' 2>/dev/null)
     [[ "$running" == "true" ]] && return 0

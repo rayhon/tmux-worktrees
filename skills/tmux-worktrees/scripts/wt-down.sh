@@ -1,26 +1,27 @@
 #!/usr/bin/env bash
-# wt-down.sh — safely free a treehouse slot that has a herdr tab.
+# wt-down.sh — finish a task: save context, release the branch, and return the
+# slot to the treehouse pool so it can be reassigned — WITHOUT killing herdr.
 #
-# ORDER MATTERS: close the herdr tab first, WAIT for its pane processes to exit,
-# THEN treehouse return. Returning a slot while its herdr panes are still live
-# lets treehouse's cwd process-sweep cascade up and kill the whole herdr session
-# (disconnecting you). This sequence avoids that.
+# This is safe because the launcher now starts the herdr server from $HOME (not
+# the slot), so `treehouse return`'s cwd-sweep only reaps the slot's own pane
+# shell, never the herdr session server. The session stays up and the tab stays
+# viewable; the slot goes back to the pool for the next task.
 #
 # Usage:
-#   wt-down.sh <slot-path> [<session>] [<repo-dir>]
+#   wt-down.sh <slot-path> [<session>]
 set -euo pipefail
 
-SLOT="${1:?usage: wt-down.sh <slot-path> [session] [repo-dir]}"
+SLOT="${1:?usage: wt-down.sh <slot-path> [session]}"
 SESSION="${2:-fmwt}"
-REPO="${3:-$PWD}"
 SLOT=$(cd "$SLOT" && pwd -P)
+SC="$(cd "$(dirname "$0")" && pwd)"
+# repo that owns this slot's pool (for `treehouse return`), derived from git.
+REPO=$(cd "$(git -C "$SLOT" rev-parse --git-common-dir 2>/dev/null)/.." 2>/dev/null && pwd -P) || REPO=""
 
 H() { HERDR_SESSION="$SESSION" herdr "$@" --session "$SESSION"; }
 
-# 0. SAVE this branch's Claude session so bringing the branch back later restores
-#    its context (Claude history is keyed to the pooled SLOT path, which gets
-#    reused — so we archive it per BRANCH instead). Done first, before anything
-#    is torn down.
+# 1. save this branch's Claude context (keyed by branch; the pooled slot path is
+#    reused, so we archive per branch). Non-destructive copy.
 BR=$(git -C "$SLOT" symbolic-ref --short HEAD 2>/dev/null || true)
 if [[ -n "$BR" ]]; then
   PROJ="$HOME/.claude/projects/$(printf '%s' "$SLOT" | sed 's#[/.]#-#g')"
@@ -31,27 +32,21 @@ if [[ -n "$BR" ]]; then
   fi
 fi
 
-# 1. find the tab whose main pane cwd == SLOT (search every workspace), close it
-tid=""
-for wsid in $(H workspace list 2>/dev/null | jq -r '.result.workspaces[]?.workspace_id' 2>/dev/null); do
-  while IFS=$'\t' read -r t cwd; do
-    [[ -n "$cwd" ]] || continue
-    rp=$(cd "$cwd" 2>/dev/null && pwd -P) || continue
-    [[ "$rp" == "$SLOT" ]] && { tid="$t"; break; }
-  done < <(H pane list --workspace "$wsid" 2>/dev/null | jq -r '.result.panes[]? | "\(.tab_id)\t\(.cwd)"' 2>/dev/null)
-  [[ -n "$tid" ]] && break
-done
-if [[ -n "$tid" ]]; then
-  H tab close "$tid" >/dev/null 2>&1 && echo "→ closed herdr tab $tid" >&2
+# 2. release the branch (detach) so it can be checked out elsewhere.
+git -C "$SLOT" checkout -q --detach 2>/dev/null || true
+
+# 3. return the slot to the pool so treehouse can reassign it. Safe: the herdr
+#    server runs from $HOME, so this reaps only the slot's pane shell.
+if [[ -n "$REPO" ]]; then
+  ( cd "$REPO" && treehouse return "$SLOT" --force ) 2>&1 | grep -iE 'returned|pool' >&2 || true
+else
+  echo "⚠ could not derive repo for '$SLOT' — return it manually: treehouse return \"$SLOT\" --force" >&2
 fi
 
-# 2. WAIT for the slot's processes (dev servers, shells) to actually exit before
-#    returning — this is what keeps treehouse's sweep from taking herdr down.
-for _ in $(seq 1 15); do
-  pgrep -f "$SLOT" >/dev/null 2>&1 || break
-  sleep 1
-done
+# 4. relabel the surviving tab to its standby name (free-<slot>) so it reads as
+#    available. Runs from REPO (needs its yaml); only renames, never closes.
+if [[ -n "$REPO" ]]; then
+  ( cd "$REPO" && HERDR_WT_SESSION="$SESSION" bash "$SC/herdr-worktrees.sh" --sync-labels ) >/dev/null 2>&1 || true
+fi
 
-# 3. now it is safe to return the slot to the pool
-( cd "$REPO" && treehouse return "$SLOT" --force )
-echo "✓ freed $SLOT" >&2
+echo "✓ '${BR:-worktree}' done — context saved, slot returned to pool, herdr still up." >&2
