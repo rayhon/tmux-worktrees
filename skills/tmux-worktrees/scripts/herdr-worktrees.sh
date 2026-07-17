@@ -57,6 +57,14 @@ H() { HERDR_SESSION="$SESSION" herdr "$@" --session "$SESSION"; }
 # --- Parse YAML --------------------------------------------------------------
 MAIN_LABEL=$(yq '.main.label' "$YAML")
 MAIN_CMD=$(yq   '.main.cmd'   "$YAML")
+# Fresh-session mode (HERDR_WT_FRESH=1): strip `claude -c` / `--continue` from
+# the main command so a REUSED pool slot doesn't resume the previous occupant's
+# conversation as junk context. wt-up sets this for every new task; a plain
+# re-run without it keeps -c so you resume where you left off within a task.
+if [[ -n "${HERDR_WT_FRESH:-}" ]]; then
+  # Portable (BSD/macOS sed has no \b): drop the -c flag and --continue.
+  MAIN_CMD=$(printf '%s' "$MAIN_CMD" | sed -e 's/claude -c /claude /g' -e 's/ --continue//g')
+fi
 # Optional shared layout block (drives BOTH launchers). Absent → built-in
 # defaults, so a yaml without `layout:` behaves exactly as before.
 #   layout:

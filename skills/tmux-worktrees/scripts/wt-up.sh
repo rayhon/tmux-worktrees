@@ -45,8 +45,10 @@ else
 fi
 echo "→ on branch: $(git -C "$SLOT" rev-parse --abbrev-ref HEAD)" >&2
 
-# 3. launch the herdr stack (branch already checked out → tab shows the branch)
-( cd "$SLOT" && HERDR_WT_SESSION="$SESSION" bash "$SC/herdr-worktrees.sh" "$SLOT" )
+# 3. launch the herdr stack (branch already checked out → tab shows the branch).
+#    HERDR_WT_FRESH=1: this is a NEW task on a (possibly reused) pool slot, so the
+#    CLAUDE pane must start a fresh session, not resume the prior occupant's.
+( cd "$SLOT" && HERDR_WT_SESSION="$SESSION" HERDR_WT_FRESH=1 bash "$SC/herdr-worktrees.sh" "$SLOT" )
 
 echo "" >&2
 echo "✓ ready. attach:  herdr --session $SESSION   → tab ${BRANCH//\//-}" >&2
