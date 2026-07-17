@@ -26,6 +26,29 @@ SC="$(cd "$(dirname "$0")" && pwd)"
 command -v treehouse >/dev/null 2>&1 || { echo "treehouse not found" >&2; exit 1; }
 [[ -d "$REPO/.git" || -f "$REPO/.git" ]] || { echo "not a git repo: $REPO" >&2; exit 1; }
 
+# Install (idempotently) a post-checkout hook so the herdr tab label follows the
+# branch on every later `git checkout`/`git switch` inside any worktree of this
+# repo. Hooks live in the shared common dir, so one install covers all worktrees.
+# Existing post-checkout content is preserved; we only append our marked block.
+install_relabel_hook() {
+  local gd hooks hook marker
+  gd=$(git -C "$1" rev-parse --git-common-dir 2>/dev/null) || return 0
+  hooks="$gd/hooks"; mkdir -p "$hooks"; hook="$hooks/post-checkout"
+  marker="# >>> herdr-worktrees relabel hook >>>"
+  [[ -f "$hook" ]] && grep -qF "$marker" "$hook" 2>/dev/null && return 0
+  [[ -f "$hook" ]] || printf '#!/usr/bin/env bash\n' > "$hook"
+  {
+    printf '%s\n' "$marker"
+    # $3==1 → a branch checkout (not a file/path checkout). Run detached so the
+    # checkout never blocks on herdr I/O.
+    printf '[ "$3" = "1" ] && "%s/herdr-relabel.sh" "$(git rev-parse --show-toplevel 2>/dev/null)" >/dev/null 2>&1 &\n' "$SC"
+    printf '# <<< herdr-worktrees relabel hook <<<\n'
+  } >> "$hook"
+  chmod +x "$hook"
+  echo "→ installed post-checkout relabel hook: $hook" >&2
+}
+install_relabel_hook "$REPO"
+
 # 1. lease a slot (path on stdout; banners to stderr)
 SLOT=$(cd "$REPO" && treehouse get --lease)
 [[ -d "$SLOT" ]] || { echo "treehouse did not return a slot" >&2; exit 1; }
