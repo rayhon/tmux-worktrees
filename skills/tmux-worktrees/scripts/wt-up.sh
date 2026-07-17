@@ -31,21 +31,31 @@ command -v treehouse >/dev/null 2>&1 || { echo "treehouse not found" >&2; exit 1
 # repo. Hooks live in the shared common dir, so one install covers all worktrees.
 # Existing post-checkout content is preserved; we only append our marked block.
 install_relabel_hook() {
-  local gd hooks hook marker
+  local gd hooks marker hook
   gd=$(git -C "$1" rev-parse --git-common-dir 2>/dev/null) || return 0
-  hooks="$gd/hooks"; mkdir -p "$hooks"; hook="$hooks/post-checkout"
+  hooks="$gd/hooks"; mkdir -p "$hooks"
   marker="# >>> herdr-worktrees relabel hook >>>"
-  [[ -f "$hook" ]] && grep -qF "$marker" "$hook" 2>/dev/null && return 0
-  [[ -f "$hook" ]] || printf '#!/usr/bin/env bash\n' > "$hook"
-  {
-    printf '%s\n' "$marker"
-    # $3==1 → a branch checkout (not a file/path checkout). Run detached so the
-    # checkout never blocks on herdr I/O.
-    printf '[ "$3" = "1" ] && "%s/herdr-relabel.sh" "$(git rev-parse --show-toplevel 2>/dev/null)" >/dev/null 2>&1 &\n' "$SC"
-    printf '# <<< herdr-worktrees relabel hook <<<\n'
-  } >> "$hook"
-  chmod +x "$hook"
-  echo "→ installed post-checkout relabel hook: $hook" >&2
+  # post-checkout fires on branch switch ($3==1); post-rewrite fires once after a
+  # rebase completes. herdr-relabel.sh itself skips while an op is in progress, so
+  # transient rebase checkouts never stamp a bogus label. Both run detached.
+  hook="$hooks/post-checkout"
+  if ! { [[ -f "$hook" ]] && grep -qF "$marker" "$hook"; }; then
+    [[ -f "$hook" ]] || printf '#!/usr/bin/env bash\n' > "$hook"
+    {
+      printf '%s\n' "$marker"
+      printf '[ "$3" = "1" ] && "%s/herdr-relabel.sh" "$(git rev-parse --show-toplevel 2>/dev/null)" >/dev/null 2>&1 &\n' "$SC"
+      printf '# <<< herdr-worktrees relabel hook <<<\n'
+    } >> "$hook"; chmod +x "$hook"; echo "→ installed post-checkout relabel hook: $hook" >&2
+  fi
+  hook="$hooks/post-rewrite"
+  if ! { [[ -f "$hook" ]] && grep -qF "$marker" "$hook"; }; then
+    [[ -f "$hook" ]] || printf '#!/usr/bin/env bash\n' > "$hook"
+    {
+      printf '%s\n' "$marker"
+      printf '"%s/herdr-relabel.sh" "$(git rev-parse --show-toplevel 2>/dev/null)" >/dev/null 2>&1 &\n' "$SC"
+      printf '# <<< herdr-worktrees relabel hook <<<\n'
+    } >> "$hook"; chmod +x "$hook"; echo "→ installed post-rewrite relabel hook: $hook" >&2
+  fi
 }
 install_relabel_hook "$REPO"
 

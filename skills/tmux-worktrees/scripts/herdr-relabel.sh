@@ -18,6 +18,15 @@ command -v jq >/dev/null 2>&1 || exit 0
 TOP=$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null) || exit 0
 TOP=$(cd "$TOP" && pwd -P)
 
+# Skip while a multi-step git operation is in progress. A rebase/merge/cherry-pick
+# does rapid transient (often detached-HEAD) checkouts; relabeling on those races
+# and can stamp a bogus "free-<slot>" label. A post-rewrite hook (installed
+# alongside post-checkout) fires once the op finishes for a clean final relabel.
+for p in rebase-merge rebase-apply MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD BISECT_LOG; do
+  g=$(git -C "$TOP" rev-parse --git-path "$p" 2>/dev/null) || continue
+  [[ -e "$g" ]] && exit 0
+done
+
 # current branch → label (slashes → dashes); detached HEAD ⇒ free[-<slot>].
 BR=$(git -C "$TOP" symbolic-ref --short -q HEAD 2>/dev/null || true)
 if [[ -z "$BR" ]]; then
