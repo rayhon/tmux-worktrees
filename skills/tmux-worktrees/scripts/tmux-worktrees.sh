@@ -54,6 +54,21 @@ for ((i=0; i<SVC_COUNT; i++)); do
   SVC_CMDS+=(  "$(yq ".services[$i].cmd"                     "$YAML")")
 done
 
+# Optional shared layout block (drives BOTH the tmux and herdr launchers from
+# the same project yaml). Absent → today's defaults (service column 28%, main
+# zoomed), so a yaml without `layout:` behaves byte-identically to before.
+#   layout:
+#     main_ratio: 0.70   # fraction of width the MAIN pane keeps → service col = rest
+#     zoom_main: false   # open with main pane zoomed
+YAML_MAIN_RATIO=$(yq -r '.layout.main_ratio // ""' "$YAML" 2>/dev/null)
+# NOTE: do NOT use `// ""` for the boolean — mikefarah yq's `//` treats `false`
+# as empty and would swallow `zoom_main: false`. Read raw; absent → "null".
+YAML_ZOOM_MAIN=$(yq -r '.layout.zoom_main' "$YAML" 2>/dev/null)
+SERVICE_PCT=28
+if [[ -n "$YAML_MAIN_RATIO" && "$YAML_MAIN_RATIO" != "null" ]]; then
+  SERVICE_PCT=$(awk -v r="$YAML_MAIN_RATIO" 'BEGIN{p=int((1-r)*100+0.5); if(p<5)p=5; if(p>95)p=95; print p}')
+fi
+
 # Build dynamic status-right from YAML labels.
 # The active label is highlighted yellow/bold based on the @active_role
 # session option (updated by pane-focus-in / after-select-pane hooks).
@@ -139,6 +154,10 @@ else
   done < <(
     for d in "$REPO/.claude/worktrees"/*/; do
       [[ -d "$d" ]] || continue
+      # Skip underscore-prefixed parked pool slots (wt-pool.sh warm dirs): they
+      # hold no task and must not get a window. A lease renames one into a
+      # branch-named dir via git worktree move, then it is picked up normally.
+      [[ "$(basename "$d")" == _* ]] && continue
       ts=$($STAT_FMT "$d" 2>/dev/null || echo 0)
       printf '%s %s\n' "$ts" "$(basename "$d")"
     done | sort -n
@@ -363,7 +382,7 @@ for idx in "${!NAMES[@]}"; do
     gated_cmd="${env_prefix}${wait_cmd}; $cmd"
 
     if [[ $i -eq 0 ]]; then
-      T split-window -h -l "28%" -t "$MAIN_PANE" -c "$svc_dir"
+      T split-window -h -l "${SERVICE_PCT}%" -t "$MAIN_PANE" -c "$svc_dir"
     else
       T split-window -v -t "$PREV_PANE" -c "$svc_dir"
     fi
@@ -379,7 +398,9 @@ for idx in "${!NAMES[@]}"; do
 
   T select-layout -t "$TARGET" -E
   T select-pane  -t "$MAIN_PANE"
-  T resize-pane -Z -t "$MAIN_PANE"
+  # Zoom main by default (today's behavior); yaml `layout.zoom_main: false` opts
+  # out so all panes show on open — matching the herdr launcher's default.
+  [[ "$YAML_ZOOM_MAIN" == "false" ]] || T resize-pane -Z -t "$MAIN_PANE"
 done
 
 # Always re-apply the dynamic status bar after the loop.
