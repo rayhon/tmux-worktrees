@@ -17,6 +17,20 @@ SLOT=$(cd "$SLOT" && pwd -P)
 
 H() { HERDR_SESSION="$SESSION" herdr "$@" --session "$SESSION"; }
 
+# 0. SAVE this branch's Claude session so bringing the branch back later restores
+#    its context (Claude history is keyed to the pooled SLOT path, which gets
+#    reused — so we archive it per BRANCH instead). Done first, before anything
+#    is torn down.
+BR=$(git -C "$SLOT" symbolic-ref --short HEAD 2>/dev/null || true)
+if [[ -n "$BR" ]]; then
+  PROJ="$HOME/.claude/projects/$(printf '%s' "$SLOT" | sed 's#[/.]#-#g')"
+  if compgen -G "$PROJ/*.jsonl" >/dev/null 2>&1; then
+    ARCH="$HOME/.claude/wt-sessions/${BR//\//-}"
+    mkdir -p "$ARCH"; rm -f "$ARCH"/*.jsonl 2>/dev/null || true
+    cp "$PROJ"/*.jsonl "$ARCH"/ 2>/dev/null && echo "→ saved Claude context for branch '$BR'" >&2
+  fi
+fi
+
 # 1. find the tab whose main pane cwd == SLOT (search every workspace), close it
 tid=""
 for wsid in $(H workspace list 2>/dev/null | jq -r '.result.workspaces[]?.workspace_id' 2>/dev/null); do

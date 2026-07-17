@@ -45,10 +45,26 @@ else
 fi
 echo "→ on branch: $(git -C "$SLOT" rev-parse --abbrev-ref HEAD)" >&2
 
-# 3. launch the herdr stack (branch already checked out → tab shows the branch).
-#    HERDR_WT_FRESH=1: this is a NEW task on a (possibly reused) pool slot, so the
-#    CLAUDE pane must start a fresh session, not resume the prior occupant's.
-( cd "$SLOT" && HERDR_WT_SESSION="$SESSION" HERDR_WT_FRESH=1 bash "$SC/herdr-worktrees.sh" "$SLOT" )
+# 3. Restore this BRANCH's saved Claude session if we have one (so bringing a
+#    branch back resumes its context), else start fresh. Either way we first
+#    clear the pooled slot's own stale history so a reused slot never leaks the
+#    previous occupant's conversation.
+PROJ="$HOME/.claude/projects/$(printf '%s' "$SLOT" | sed 's#[/.]#-#g')"
+ARCH="$HOME/.claude/wt-sessions/${BRANCH//\//-}"
+mkdir -p "$PROJ"; rm -f "$PROJ"/*.jsonl 2>/dev/null || true
+FRESH=1
+if compgen -G "$ARCH/*.jsonl" >/dev/null 2>&1; then
+  cp "$ARCH"/*.jsonl "$PROJ"/ 2>/dev/null && { FRESH=""; echo "→ restored prior context for '$BRANCH'" >&2; }
+fi
+
+# 4. launch the herdr stack (branch already checked out → tab shows the branch).
+#    FRESH → strip -c so no resume; restored → keep -c so it resumes the branch.
+#    (Env prefix must be a literal assignment, so branch on FRESH here.)
+if [[ -n "$FRESH" ]]; then
+  ( cd "$SLOT" && HERDR_WT_SESSION="$SESSION" HERDR_WT_FRESH=1 bash "$SC/herdr-worktrees.sh" "$SLOT" )
+else
+  ( cd "$SLOT" && HERDR_WT_SESSION="$SESSION" bash "$SC/herdr-worktrees.sh" "$SLOT" )
+fi
 
 echo "" >&2
 echo "✓ ready. attach:  herdr --session $SESSION   → tab ${BRANCH//\//-}" >&2
