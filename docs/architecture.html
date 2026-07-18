@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Treehouse × herdr — pooled worktree dev stacks</title>
+<style>
+  :root{
+    --ink:#0b0f16;            /* ground: near-black, blue bias */
+    --panel:#111a27;          /* surface */
+    --panel-2:#0e1622;        /* nested surface */
+    --line:#1f2c3e;           /* hairlines */
+    --line-strong:#2b3c53;
+    --text:#dbe4f0;           /* primary text */
+    --muted:#7f8ea6;          /* secondary */
+    --faint:#54637a;          /* tertiary */
+    --tree:#5ad07f;           /* treehouse — leaf green */
+    --herdr:#4cc9f0;          /* herdr — signal cyan */
+    --sess:#f2b34a;           /* session link — amber */
+    --branch:#c792ea;         /* branch — violet */
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:
+      radial-gradient(1100px 620px at 12% -8%, #13223022, transparent 60%),
+      radial-gradient(900px 520px at 108% 8%, #0f2a3322, transparent 55%),
+      var(--ink);
+    color:var(--text);
+    font-family:var(--sans);
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    padding:40px 26px 64px;
+  }
+  .wrap{max-width:1180px;margin:0 auto}
+
+  /* ---------- header ---------- */
+  header{margin-bottom:30px}
+  .eyebrow{
+    font-family:var(--mono);font-size:11px;letter-spacing:.32em;text-transform:uppercase;
+    color:var(--faint);display:flex;align-items:center;gap:10px;margin:0 0 14px;
+  }
+  .eyebrow::after{content:"";height:1px;flex:1;background:linear-gradient(90deg,var(--line-strong),transparent)}
+  h1{
+    font-size:clamp(28px,4.2vw,44px);line-height:1.04;margin:0 0 12px;font-weight:800;
+    letter-spacing:-.02em;text-wrap:balance;
+  }
+  h1 .x{color:var(--faint);font-weight:400;padding:0 .18em}
+  h1 .t{color:var(--tree)}
+  h1 .h{color:var(--herdr)}
+  .lede{color:var(--muted);max-width:74ch;font-size:15.5px;margin:0}
+  .lede code{font-family:var(--mono);color:var(--text);font-size:.92em;background:#0e1b28;padding:1px 6px;border-radius:5px;border:1px solid var(--line)}
+
+  /* ---------- band scaffold ---------- */
+  .band{
+    position:relative;border:1px solid var(--line);border-radius:16px;
+    background:linear-gradient(180deg,#0f1926,#0d1521);
+    padding:20px 20px 22px;margin-top:16px;
+  }
+  .band-head{display:flex;align-items:baseline;gap:12px;margin:0 0 16px;flex-wrap:wrap}
+  .band-idx{font-family:var(--mono);font-size:12px;color:var(--ink);background:var(--faint);
+    border-radius:6px;padding:2px 8px;font-weight:700;letter-spacing:.04em}
+  .band-title{font-size:16.5px;font-weight:700;letter-spacing:-.01em;margin:0}
+  .band-sub{font-family:var(--mono);font-size:11.5px;color:var(--faint);letter-spacing:.02em}
+  .band[data-accent="tree"] .band-idx{background:var(--tree);color:#06210f}
+  .band[data-accent="herdr"] .band-idx{background:var(--herdr);color:#04222e}
+  .band[data-accent="drive"] .band-idx{background:var(--sess);color:#2a1c02}
+
+  /* connector between bands */
+  .flow{display:flex;justify-content:center;margin:2px 0 -6px}
+  .flow svg{overflow:visible}
+  .flow .lbl{font-family:var(--mono);font-size:10.5px;fill:var(--faint);letter-spacing:.06em}
+
+  /* ---------- driver row ---------- */
+  .driver{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:0;align-items:stretch}
+  @media(max-width:820px){.driver{grid-template-columns:1fr;gap:12px}.arrow-cell{display:none}}
+  .node{
+    border:1px solid var(--line-strong);border-radius:12px;background:var(--panel);
+    padding:14px 15px;display:flex;flex-direction:column;gap:8px;min-height:100%;
+  }
+  .node h3{margin:0;font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .node p{margin:0;font-size:12.5px;color:var(--muted)}
+  .node .path{font-family:var(--mono);font-size:11px;color:var(--faint);word-break:break-all}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none;box-shadow:0 0 0 3px #ffffff08}
+  .dot.tree{background:var(--tree)} .dot.herdr{background:var(--herdr)}
+  .dot.sess{background:var(--sess)} .dot.branch{background:var(--branch)}
+  .arrow-cell{display:flex;align-items:center;justify-content:center;padding:0 6px;color:var(--faint)}
+  .arrow-cell span{font-family:var(--mono);font-size:11px;color:var(--faint);white-space:nowrap;
+    writing-mode:horizontal-tb;text-align:center}
+  .arrow-cell .a{font-size:20px;line-height:1;color:var(--line-strong)}
+
+  .yaml{font-family:var(--mono);font-size:11px;color:var(--muted);background:var(--panel-2);
+    border:1px solid var(--line);border-radius:8px;padding:9px 11px;white-space:pre;overflow-x:auto}
+  .yaml .k{color:var(--herdr)} .yaml .v{color:var(--tree)} .yaml .c{color:var(--faint)}
+
+  /* ---------- treehouse pool ---------- */
+  .pool{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:820px){.pool{grid-template-columns:1fr}}
+  .slot{
+    border:1px solid var(--line-strong);border-radius:13px;background:var(--panel);
+    padding:0;overflow:hidden;display:flex;flex-direction:column;
+  }
+  .slot.free{opacity:.62;border-style:dashed}
+  .slot-top{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:11px 13px;border-bottom:1px solid var(--line);background:#0f1a28}
+  .slot-id{font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .slot-id b{color:var(--tree);font-weight:700}
+  .chip{font-family:var(--mono);font-size:11px;font-weight:700;border-radius:999px;
+    padding:3px 10px;display:inline-flex;align-items:center;gap:6px;border:1px solid}
+  .chip.branch{color:var(--branch);border-color:#3a2d55;background:#1a1330}
+  .chip.free{color:var(--faint);border-color:var(--line-strong);background:#0e1622}
+  .chip .d{width:6px;height:6px;border-radius:50%;background:currentColor}
+
+  .panes{padding:11px 12px;display:flex;flex-direction:column;gap:7px}
+  .pane{
+    display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:9px;
+    border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--panel-2);
+    font-size:12px;
+  }
+  .pane .tag{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.04em;
+    padding:2px 7px;border-radius:5px;white-space:nowrap}
+  .pane.main .tag{background:#12271a;color:var(--tree);border:1px solid #234a31}
+  .pane.svc .tag{background:#0f2530;color:var(--herdr);border:1px solid #1d465a}
+  .pane .cwd{font-family:var(--mono);font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pane .port{font-family:var(--mono);font-size:10.5px;color:var(--sess);white-space:nowrap}
+  .pane.main .sess-link{font-family:var(--mono);font-size:9.5px;color:var(--sess)}
+  .slot-foot{padding:8px 13px;border-top:1px solid var(--line);font-family:var(--mono);
+    font-size:10px;color:var(--faint);display:flex;justify-content:space-between;gap:8px}
+
+  .shared{margin-top:14px;border:1px dashed var(--line-strong);border-radius:11px;
+    background:#0d1520;padding:12px 15px;display:flex;gap:22px;flex-wrap:wrap;align-items:center}
+  .shared .s-title{font-family:var(--mono);font-size:11px;color:var(--tree);font-weight:700;letter-spacing:.04em}
+  .shared .s-item{font-size:12px;color:var(--muted)}
+  .shared .s-item b{color:var(--text);font-weight:600}
+  .shared code{font-family:var(--mono);font-size:11px;color:var(--text)}
+
+  /* ---------- herdr view ---------- */
+  .herdr-grid{display:grid;grid-template-columns:230px 1fr;gap:16px}
+  @media(max-width:820px){.herdr-grid{grid-template-columns:1fr}}
+  .server{border:1px solid #1d465a;border-radius:12px;background:linear-gradient(180deg,#0e2029,#0c1a22);
+    padding:15px;display:flex;flex-direction:column;gap:10px}
+  .server h3{margin:0;font-size:13.5px;display:flex;align-items:center;gap:8px}
+  .server p{margin:0;font-size:12px;color:var(--muted)}
+  .server .cmd{font-family:var(--mono);font-size:11px;color:var(--herdr);background:#08161d;
+    border:1px solid #163847;border-radius:7px;padding:8px 10px;word-break:break-all}
+  .server .warnpin{font-family:var(--mono);font-size:10.5px;color:var(--sess);border-left:2px solid var(--sess);
+    padding-left:9px}
+
+  .tabs{border:1px solid var(--line-strong);border-radius:12px;background:var(--panel);overflow:hidden}
+  .tabbar{display:flex;gap:0;background:#0c1521;border-bottom:1px solid var(--line);overflow-x:auto}
+  .tab{font-family:var(--mono);font-size:11.5px;padding:10px 15px;color:var(--muted);
+    border-right:1px solid var(--line);white-space:nowrap;display:flex;align-items:center;gap:8px;cursor:default}
+  .tab .d{width:6px;height:6px;border-radius:50%}
+  .tab.active{background:var(--panel);color:var(--text)}
+  .tab.active .d{background:var(--branch)}
+  .tab.free{color:var(--faint)} .tab.free .d{background:var(--faint)}
+  .tabview{padding:14px;display:grid;grid-template-columns:1.9fr 1fr 1fr 1fr;gap:8px}
+  @media(max-width:640px){.tabview{grid-template-columns:1fr 1fr}}
+  .vpane{border:1px solid var(--line);border-radius:8px;background:#0a121c;min-height:118px;
+    display:flex;flex-direction:column;overflow:hidden}
+  .vpane .vhead{font-family:var(--mono);font-size:10px;font-weight:700;padding:6px 9px;
+    border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:6px}
+  .vpane.main .vhead{color:var(--tree)} .vpane.svc .vhead{color:var(--herdr)}
+  .vpane .vbody{padding:8px 9px;font-family:var(--mono);font-size:10px;color:var(--faint);
+    line-height:1.55;flex:1}
+  .vpane .vbody .ok{color:var(--tree)} .vpane .vbody .prompt{color:var(--text)}
+  .vpane .status{font-size:8.5px;padding:1px 5px;border-radius:4px;font-weight:700}
+  .status.up{background:#12271a;color:var(--tree)} .status.idle{background:#231c0d;color:var(--sess)}
+
+  /* ---------- why band ---------- */
+  .why{border:1px solid var(--line);border-radius:16px;margin-top:16px;overflow:hidden;
+    background:linear-gradient(180deg,#101c2a,#0c1420)}
+  .why-lead{padding:18px 20px 4px}
+  .why-lead .problem{font-size:15px;color:var(--muted);margin:0 0 3px;max-width:80ch}
+  .why-lead .problem b{color:var(--text);font-weight:600}
+  .why-lead .problem .strike{color:var(--faint);text-decoration:line-through;text-decoration-color:#3a4b63}
+  .why-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:14px 20px 20px}
+  @media(max-width:820px){.why-grid{grid-template-columns:1fr 1fr}}
+  .why-card{border:1px solid var(--line-strong);border-radius:11px;background:var(--panel);padding:13px 14px}
+  .why-card .n{font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.14em}
+  .why-card h4{margin:6px 0 5px;font-size:13px;font-weight:700;letter-spacing:-.01em}
+  .why-card p{margin:0;font-size:12px;color:var(--muted)}
+  .why-card p b{color:var(--text);font-weight:600}
+  .why-card .bar{height:3px;width:34px;border-radius:2px;margin-bottom:9px}
+
+  /* ---------- example ribbon ---------- */
+  .ribbon{display:flex;align-items:flex-start;gap:12px;margin:2px 0 16px;
+    border-left:3px solid var(--sess);background:#181307;border-radius:0 9px 9px 0;padding:11px 14px}
+  .ribbon .rk{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.12em;color:var(--sess);
+    white-space:nowrap;padding-top:1px}
+  .ribbon p{margin:0;font-size:12.5px;color:var(--muted)}
+  .ribbon p b{color:var(--text);font-weight:600}
+  .ribbon code{font-family:var(--mono);font-size:11px;color:var(--text);background:#0e1b28;border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+
+  /* ---------- section heading ---------- */
+  .sec-head{display:flex;align-items:baseline;gap:12px;margin:38px 0 4px;flex-wrap:wrap}
+  .sec-head h2{font-size:19px;font-weight:800;letter-spacing:-.02em;margin:0}
+  .sec-head .k{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.06em}
+  .sec-note{font-size:13.5px;color:var(--muted);margin:2px 0 14px;max-width:82ch}
+
+  /* ---------- the pieces ---------- */
+  .pieces{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:820px){.pieces{grid-template-columns:1fr}}
+  .piece{border:1px solid var(--line-strong);border-radius:13px;background:var(--panel);padding:16px 16px 15px;
+    display:flex;flex-direction:column;gap:9px;position:relative;overflow:hidden}
+  .piece::before{content:"";position:absolute;top:0;left:0;right:0;height:3px}
+  .piece.tree::before{background:var(--tree)} .piece.herdr::before{background:var(--herdr)} .piece.tmux::before{background:var(--faint)}
+  .piece .role{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}
+  .piece.tree .role{color:var(--tree)} .piece.herdr .role{color:var(--herdr)} .piece.tmux .role{color:var(--muted)}
+  .piece h3{margin:0;font-size:17px;font-weight:800;letter-spacing:-.01em;display:flex;align-items:center;gap:9px}
+  .piece h3 .v{font-family:var(--mono);font-size:10px;color:var(--faint);font-weight:500;border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+  .piece p{margin:0;font-size:12.5px;color:var(--muted)}
+  .piece p b{color:var(--text);font-weight:600}
+  .piece .why-tag{margin-top:auto;font-size:11.5px;color:var(--faint);border-top:1px solid var(--line);padding-top:9px}
+  .piece .why-tag b{color:var(--text)}
+  .piece code{font-family:var(--mono);font-size:11px;color:var(--text)}
+  .glue{margin-top:13px;border:1px dashed var(--line-strong);border-radius:11px;background:#0d1520;
+    padding:12px 15px;font-size:12.5px;color:var(--muted);display:flex;gap:11px;align-items:center;flex-wrap:wrap}
+  .glue b{color:var(--text)} .glue .g-tag{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;color:var(--branch)}
+
+  /* ---------- yaml infographic ---------- */
+  .yaml-info{display:grid;grid-template-columns:1.05fr 1fr;gap:16px;align-items:start}
+  @media(max-width:820px){.yaml-info{grid-template-columns:1fr}}
+  .yaml-code{border:1px solid var(--line-strong);border-radius:13px;background:#0a121c;overflow:hidden}
+  .yaml-code .fname{font-family:var(--mono);font-size:11px;color:var(--faint);padding:9px 14px;
+    border-bottom:1px solid var(--line);background:#0c1521;display:flex;align-items:center;gap:8px}
+  .yaml-code .fname .d{width:9px;height:9px;border-radius:50%;background:var(--sess)}
+  .yaml-code pre{margin:0;padding:14px 16px;font-family:var(--mono);font-size:12px;line-height:1.72;overflow-x:auto;color:var(--text)}
+  .yaml-code .key{color:var(--herdr)} .yaml-code .str{color:var(--tree)} .yaml-code .num{color:var(--sess)}
+  .yaml-code .cmt{color:var(--faint)} .yaml-code .sub{color:var(--branch)}
+  .yaml-code .marker{display:inline-block;min-width:17px;height:17px;line-height:17px;text-align:center;
+    font-size:10px;font-weight:700;border-radius:5px;background:#1a2635;color:var(--text);margin-right:7px}
+  .yaml-legend{display:flex;flex-direction:column;gap:9px}
+  .yl{display:grid;grid-template-columns:auto 1fr;gap:11px;border:1px solid var(--line);border-radius:10px;
+    background:var(--panel-2);padding:11px 12px}
+  .yl .m{min-width:19px;height:19px;line-height:19px;text-align:center;font-family:var(--mono);font-size:10px;
+    font-weight:700;border-radius:6px;background:#1a2635;color:var(--text)}
+  .yl h4{margin:0 0 2px;font-size:12.5px;font-weight:700}
+  .yl h4 code{font-family:var(--mono);font-size:11px;color:var(--herdr)}
+  .yl p{margin:0;font-size:11.5px;color:var(--muted)}
+  .yl p code{font-family:var(--mono);font-size:10.5px;color:var(--text)}
+
+  /* ---------- how to use ---------- */
+  .steps{display:flex;flex-direction:column;gap:0;border:1px solid var(--line);border-radius:14px;
+    background:linear-gradient(180deg,#101a27,#0c1420);overflow:hidden}
+  .step{display:grid;grid-template-columns:52px 1fr;gap:0;border-bottom:1px solid var(--line)}
+  .step:last-child{border-bottom:0}
+  .step .sn{display:flex;align-items:flex-start;justify-content:center;padding-top:16px;
+    font-family:var(--mono);font-size:13px;font-weight:700;color:var(--ink);background:#0c1521;border-right:1px solid var(--line)}
+  .step:nth-child(1) .sn{color:var(--tree)} .step:nth-child(2) .sn{color:var(--herdr)}
+  .step:nth-child(3) .sn{color:var(--sess)} .step:nth-child(4) .sn{color:var(--branch)} .step:nth-child(5) .sn{color:var(--tree)}
+  .step .sbody{padding:15px 16px;display:flex;flex-direction:column;gap:8px}
+  .step h4{margin:0;font-size:14px;font-weight:700;letter-spacing:-.01em}
+  .step h4 .when{font-family:var(--mono);font-size:10px;font-weight:600;color:var(--faint);
+    border:1px solid var(--line);border-radius:5px;padding:1px 7px;margin-left:8px;letter-spacing:.04em}
+  .step .cli{font-family:var(--mono);font-size:12px;color:var(--text);background:#08121c;border:1px solid var(--line-strong);
+    border-radius:8px;padding:9px 12px;display:flex;gap:9px;align-items:center;overflow-x:auto}
+  .step .cli .p{color:var(--tree);user-select:none}
+  .step .cli.chat{color:var(--herdr)} .step .cli.chat .p{color:var(--herdr)}
+  .step p{margin:0;font-size:12.5px;color:var(--muted)}
+  .step p b{color:var(--text);font-weight:600}
+
+  /* ---------- legend ---------- */
+  .legend{margin-top:26px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  @media(max-width:820px){.legend{grid-template-columns:1fr 1fr}}
+  .leg{border:1px solid var(--line);border-radius:10px;background:var(--panel-2);padding:12px 13px}
+  .leg h4{margin:0 0 5px;font-size:12px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .leg p{margin:0;font-size:11.5px;color:var(--muted)}
+  .leg code{font-family:var(--mono);font-size:10.5px;color:var(--text)}
+
+  footer{margin-top:34px;border-top:1px solid var(--line);padding-top:16px;
+    font-family:var(--mono);font-size:11px;color:var(--faint);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">dev infrastructure · pooled worktrees</p>
+    <h1><span class="t">treehouse</span><span class="x">×</span><span class="h">herdr</span> — one command per branch, a full stack per worktree</h1>
+    <p class="lede">Claude CLI runs the <code>tmux-worktrees</code> skill to lease a worktree from a <b style="color:var(--tree)">treehouse</b> pool off your clone, put it on a branch, and launch its dev stack. <b style="color:var(--herdr)">herdr</b> — one local server — renders every worktree as a labeled tab of panes. How many panes, which services, which ports, what layout: all read from one <code>tmux-worktree.yaml</code>; no project values live in the scripts.</p>
+  </header>
+
+  <!-- ============ WHY ============ -->
+  <section class="why">
+    <div class="why-lead">
+      <p class="eyebrow" style="margin-bottom:8px">why it's good</p>
+      <p class="problem">Working several branches at once usually means <span class="strike">cloning the repo three times</span>, <span class="strike">fighting port collisions</span>, <span class="strike">waiting on <code style="font-family:var(--mono)">npm install</code></span>, and <span class="strike">killing dev servers you didn't mean to</span>. This skill collapses all of that into <b>one command per branch</b> — and a live, labeled view of every stack at once.</p>
+    </div>
+    <div class="why-grid">
+      <div class="why-card">
+        <div class="bar" style="background:var(--tree)"></div>
+        <div class="n">01</div>
+        <h4>Real stacks, in parallel</h4>
+        <p>Each branch gets its <b>whole dev stack running</b> — not just a checkout. Review, test, and demo several features <b>live at the same time</b>.</p>
+      </div>
+      <div class="why-card">
+        <div class="bar" style="background:var(--herdr)"></div>
+        <div class="n">02</div>
+        <h4>Warm pool, no cold start</h4>
+        <p>Slots are <b>reused</b> — <code style="font-family:var(--mono);font-size:10.5px">node_modules</code>, env and ports stay warm. A lease is instant; no per-branch install tax.</p>
+      </div>
+      <div class="why-card">
+        <div class="bar" style="background:var(--sess)"></div>
+        <div class="n">03</div>
+        <h4>Your real data, isolated</h4>
+        <p>Worktrees share your clone's <b>.git + R2 blobs</b> (real data) but keep <b>per-slot sqlite</b> — no empty test DB, no cross-branch corruption.</p>
+      </div>
+      <div class="why-card">
+        <div class="bar" style="background:var(--branch)"></div>
+        <div class="n">04</div>
+        <h4>One command, one view</h4>
+        <p><code style="font-family:var(--mono);font-size:10.5px">wt-up &lt;branch&gt;</code> → a herdr tab. No manual tmux wiring, no port juggling, and <b>return never kills your session</b>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ THE PIECES ============ -->
+  <div class="sec-head">
+    <h2>The three pieces</h2>
+    <span class="k">// what each one does, and why</span>
+  </div>
+  <p class="sec-note">Two concerns, kept separate. <b style="color:var(--tree)">treehouse</b> owns the <b>worktrees</b> (creating, leasing, returning them). A <b>multiplexer</b> owns the <b>view</b> — many live dev-server panes on one screen so you can watch a whole stack at a glance. tmux is the classic multiplexer; <b style="color:var(--herdr)">herdr</b> is the agent-native upgrade. The skill lets you use either.</p>
+  <div class="pieces">
+    <div class="piece tree">
+      <span class="role">Pool manager</span>
+      <h3><span class="dot tree"></span>treehouse</h3>
+      <p><b>Manages the worktrees.</b> Keeps a small pool of reusable git worktrees off your clone. <code>get --lease</code> hands you a warm one, a <code>post_create</code> hook wires its ports / env / R2 mirror, <code>return</code> frees it for the next task.</p>
+      <p class="why-tag"><b>Why:</b> no cloning or <code>npm install</code> per branch; branches stay isolated but share your real data.</p>
+    </div>
+    <div class="piece herdr">
+      <span class="role">The view · recommended</span>
+      <h3><span class="dot herdr"></span>herdr <span class="v">agent-native</span></h3>
+      <p><b>Shows the worktrees.</b> One persistent local server, sessions saved to disk, a tab per worktree that carries the <b>branch name</b> and live <b>pane status</b>. Attach any time to watch every stack.</p>
+      <p class="why-tag"><b>Why over tmux:</b> survives restarts, shows branch + agent status, and is built for driving CLI agents.</p>
+    </div>
+    <div class="piece tmux">
+      <span class="role">The view · classic</span>
+      <h3><span class="dot" style="background:var(--faint)"></span>tmux <span class="v">also supported</span></h3>
+      <p><b>The original multiplexer</b> the skill launched on — still fully supported from the <b>same yaml</b>. Reach for it if you already live in tmux; otherwise herdr gives a richer, restart-proof view.</p>
+      <p class="why-tag"><b>Why keep it:</b> zero new tooling — one config drives both, so the choice is yours per machine.</p>
+    </div>
+  </div>
+  <div class="glue">
+    <span class="g-tag">◇ THE GLUE</span>
+    <span>The <b>tmux-worktrees skill</b> (run by Claude Code) ties them together: it reads your <b>tmux-worktree.yaml</b>, asks treehouse for a slot, and launches the panes in tmux <i>or</i> herdr. No project values live in the scripts.</span>
+  </div>
+
+  <!-- ============ BAND 1 — DRIVER ============ -->
+  <section class="band" data-accent="drive">
+    <div class="band-head">
+      <span class="band-idx">1</span>
+      <h2 class="band-title">Claude CLI drives it from config</h2>
+      <span class="band-sub">skill · yaml · wt-up.sh</span>
+    </div>
+    <div class="driver">
+      <div class="node">
+        <h3><span class="dot sess"></span>tmux-worktree.yaml</h3>
+        <p>Single source of truth at repo root. Layout + services, read by both tmux and herdr launchers.</p>
+        <div class="yaml"><span class="c"># layout</span>
+<span class="k">main</span>: <span class="v">CLAUDE</span>  <span class="c">ratio 0.70</span>
+<span class="k">services</span>:
+  - <span class="v">MCP</span>   apps/mcp/mcp-hub
+  - <span class="v">WEB</span>   apps/web
+  - <span class="v">AGENT</span> apps/agentic/…</div>
+      </div>
+      <div class="arrow-cell"><div><span class="a">→</span></div></div>
+      <div class="node">
+        <h3><span class="dot tree"></span>Claude CLI + skill</h3>
+        <p><code style="font-family:var(--mono);color:var(--text)">/tmux-worktrees</code> → runs <b>wt-up.sh &lt;branch&gt;</b>: lease a slot, fetch/checkout the branch, launch the stack.</p>
+        <p class="path">skills/tmux-worktrees/scripts/wt-up.sh</p>
+      </div>
+      <div class="arrow-cell"><div><span class="a">→</span></div></div>
+      <div class="node">
+        <h3><span class="dot tree"></span>treehouse lease</h3>
+        <p><code style="font-family:var(--mono);color:var(--text)">treehouse get --lease</code> hands back a free slot; a <b>post_create</b> hook wires ports, env &amp; the R2 mirror.</p>
+        <p class="path">~/.treehouse/&lt;repo-hash&gt;/&lt;slot&gt;/</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="flow" aria-hidden="true">
+    <svg width="220" height="34"><line x1="110" y1="0" x2="110" y2="26" stroke="#2b3c53" stroke-width="1.5"/><polygon points="110,34 105,25 115,25" fill="#2b3c53"/><text x="122" y="17" class="lbl">leases from pool</text></svg>
+  </div>
+
+  <!-- ============ BAND 2 — TREEHOUSE POOL ============ -->
+  <section class="band" data-accent="tree">
+    <div class="band-head">
+      <span class="band-idx">2</span>
+      <h2 class="band-title">treehouse — a pool of worktrees off your clone</h2>
+      <span class="band-sub">each active slot = one branch · 1 main + N services (from yaml) · pool-unique offset</span>
+    </div>
+
+    <div class="ribbon">
+      <span class="rk">◆ EXAMPLE</span>
+      <p>The <b>four panes</b> below are just what <code>agent-board</code>'s yaml declares — <b>1 main</b> (<code>CLAUDE</code>) + <b>3 services</b> (<code>mcp-hub · web · agent-hub</code>). The pane count, labels, ports and layout are <b>entirely yaml-driven</b>: a repo with one service gets 2 panes, a repo with five gets 6. Nothing here is hardcoded.</p>
+    </div>
+
+    <div class="pool">
+      <!-- slot 1 -->
+      <div class="slot">
+        <div class="slot-top">
+          <span class="slot-id">slot <b>1</b> · offset +110</span>
+          <span class="chip branch"><span class="d"></span>fix/poi-cache</span>
+        </div>
+        <div class="panes">
+          <div class="pane main"><span class="tag">CLAUDE</span><span class="cwd">agent-board/</span><span class="sess-link">⇢ session</span></div>
+          <div class="pane svc"><span class="tag">MCP-HUB</span><span class="cwd">apps/mcp/mcp-hub</span><span class="port">:8897</span></div>
+          <div class="pane svc"><span class="tag">WEB</span><span class="cwd">apps/web</span><span class="port">:3110</span></div>
+          <div class="pane svc"><span class="tag">AGENT-HUB</span><span class="cwd">apps/agentic/…</span><span class="port">:52067</span></div>
+        </div>
+        <div class="slot-foot"><span>4 panes</span><span>~/.treehouse/…/1</span></div>
+      </div>
+
+      <!-- slot 2 (highlighted) -->
+      <div class="slot" style="border-color:#2d5a3c;box-shadow:0 0 0 1px #2d5a3c, 0 12px 30px -18px #5ad07f55">
+        <div class="slot-top" style="background:#10221a">
+          <span class="slot-id">slot <b>2</b> · offset +120</span>
+          <span class="chip branch"><span class="d"></span>feat/extract-feed</span>
+        </div>
+        <div class="panes">
+          <div class="pane main"><span class="tag">CLAUDE</span><span class="cwd">agent-board/</span><span class="sess-link">⇢ session</span></div>
+          <div class="pane svc"><span class="tag">MCP-HUB</span><span class="cwd">apps/mcp/mcp-hub</span><span class="port">:8907</span></div>
+          <div class="pane svc"><span class="tag">WEB</span><span class="cwd">apps/web</span><span class="port">:3120</span></div>
+          <div class="pane svc"><span class="tag">AGENT-HUB</span><span class="cwd">apps/agentic/…</span><span class="port">:52077</span></div>
+        </div>
+        <div class="slot-foot"><span>4 panes · active</span><span>~/.treehouse/…/2</span></div>
+      </div>
+
+      <!-- slot 3 free -->
+      <div class="slot free">
+        <div class="slot-top">
+          <span class="slot-id">slot <b style="color:var(--faint)">3</b> · warm</span>
+          <span class="chip free"><span class="d"></span>free-3</span>
+        </div>
+        <div class="panes">
+          <div class="pane main"><span class="tag" style="background:#141a22;color:var(--faint);border-color:var(--line)">CLAUDE</span><span class="cwd">detached HEAD</span><span></span></div>
+          <div class="pane svc" style="opacity:.5"><span class="tag">MCP-HUB</span><span class="cwd">— standby —</span><span class="port"></span></div>
+          <div class="pane svc" style="opacity:.5"><span class="tag">WEB</span><span class="cwd">— standby —</span><span class="port"></span></div>
+          <div class="pane svc" style="opacity:.5"><span class="tag">AGENT-HUB</span><span class="cwd">— standby —</span><span class="port"></span></div>
+        </div>
+        <div class="slot-foot"><span>released → reusable</span><span>~/.treehouse/…/3</span></div>
+      </div>
+    </div>
+
+    <div class="shared">
+      <span class="s-title">▚ SHARED FROM YOUR CLONE</span>
+      <span class="s-item"><b>.git</b> — worktrees branch off <code>main</code>, no separate clone</span>
+      <span class="s-item"><b>.wrangler / R2</b> — blob buckets symlinked (real data), sqlite copied per-slot</span>
+      <span class="s-item"><b>offset</b> <code>100 + slot×10</code> — never collides with your tmux stacks</span>
+    </div>
+  </section>
+
+  <div class="flow" aria-hidden="true">
+    <svg width="260" height="34"><line x1="130" y1="0" x2="130" y2="26" stroke="#2b3c53" stroke-width="1.5"/><polygon points="130,34 125,25 135,25" fill="#2b3c53"/><text x="142" y="17" class="lbl">rendered as tabs</text></svg>
+  </div>
+
+  <!-- ============ BAND 3 — HERDR VIEW ============ -->
+  <section class="band" data-accent="herdr">
+    <div class="band-head">
+      <span class="band-idx">3</span>
+      <h2 class="band-title">herdr — one local server, a tab per worktree</h2>
+      <span class="band-sub">session: fmwt · tab label tracks the branch</span>
+    </div>
+
+    <div class="herdr-grid">
+      <div class="server">
+        <h3><span class="dot herdr"></span>herdr server</h3>
+        <p>One persistent local server, state on disk. Renders each worktree's panes; you attach to view.</p>
+        <div class="cmd">herdr --session fmwt</div>
+        <p class="warnpin">Started from <b>$HOME</b>, never a slot — so <code style="color:var(--sess)">treehouse return</code> (kills by cwd) can't take the session down.</p>
+      </div>
+
+      <div class="tabs">
+        <div class="tabbar">
+          <div class="tab"><span class="d"></span>fix-poi-cache</div>
+          <div class="tab active"><span class="d"></span>feat-extract-feed</div>
+          <div class="tab free"><span class="d"></span>free-3</div>
+        </div>
+        <div class="tabview">
+          <div class="vpane main">
+            <div class="vhead"><span>CLAUDE</span><span class="sess-link" style="color:var(--sess);font-size:8.5px">⇢ .jsonl</span></div>
+            <div class="vbody"><span class="prompt">›</span> continue item-drop fix<br><span class="ok">✔</span> branch session restored<br>agent-board feat/extract-feed</div>
+          </div>
+          <div class="vpane svc">
+            <div class="vhead"><span>MCP-HUB</span><span class="status up">UP</span></div>
+            <div class="vbody">:8907<br><span class="ok">ready</span> mcp-hub</div>
+          </div>
+          <div class="vpane svc">
+            <div class="vhead"><span>WEB</span><span class="status up">UP</span></div>
+            <div class="vbody">:3120<br><span class="ok">ready</span> /extract</div>
+          </div>
+          <div class="vpane svc">
+            <div class="vhead"><span>AGENT-HUB</span><span class="status up">UP</span></div>
+            <div class="vbody">:52077<br><span class="ok">ready</span> agent-hub</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ YAML INFOGRAPHIC ============ -->
+  <div class="sec-head">
+    <h2>One yaml drives it all</h2>
+    <span class="k">// tmux-worktree.yaml · repo root</span>
+  </div>
+  <p class="sec-note">This file is the whole configuration. It names the main pane, lists the service panes with their ports and commands, and sets the layout. The same file feeds both the tmux and herdr launchers — change it once, both follow.</p>
+  <div class="yaml-info">
+    <div class="yaml-code">
+      <div class="fname"><span class="d"></span>tmux-worktree.yaml</div>
+<pre><span class="marker">A</span><span class="key">main</span>:
+    <span class="key">label</span>: <span class="str">CLAUDE</span>       <span class="cmt"># the agent pane</span>
+    <span class="key">cmd</span>: <span class="str">claude</span>
+
+<span class="marker">B</span><span class="key">layout</span>:
+    <span class="key">main_ratio</span>: <span class="num">0.70</span>    <span class="cmt"># 70% width to CLAUDE</span>
+    <span class="key">zoom_main</span>: <span class="num">false</span>
+
+<span class="marker">C</span><span class="key">services</span>:
+  - <span class="key">label</span>: <span class="str">MCP</span>
+    <span class="sub">cwd</span>: <span class="str">apps/mcp/mcp-hub</span>   <span class="marker">D</span>
+    <span class="sub">port</span>: <span class="num">8787</span>              <span class="marker">E</span>
+    <span class="sub">cmd</span>: <span class="str">npx wrangler dev --port {PORT}</span>
+    <span class="sub">symlinks</span>: [<span class="str">.wrangler/state</span>]  <span class="marker">F</span>
+  - <span class="key">label</span>: <span class="str">WEB</span>
+    <span class="sub">cwd</span>: <span class="str">apps/web</span>
+    <span class="sub">port</span>: <span class="num">3000</span>
+    <span class="sub">env</span>: {<span class="sub">MCP_URL</span>: <span class="str">"{MCP_URL}"</span>}   <span class="marker">G</span>
+  - <span class="key">label</span>: <span class="str">AGENT</span>
+    <span class="sub">cwd</span>: <span class="str">apps/agentic/agent-hub</span>
+    <span class="sub">port</span>: <span class="num">51957</span></pre>
+    </div>
+    <div class="yaml-legend">
+      <div class="yl"><span class="m">A</span><div><h4><code>main</code> — the agent pane</h4><p>The wide pane that runs <code>claude</code>. One per worktree; everything else is a service.</p></div></div>
+      <div class="yl"><span class="m">B</span><div><h4><code>layout</code> — the split</h4><p><code>main_ratio 0.70</code> gives CLAUDE 70% of the width; services share the rest. <code>zoom_main</code> optionally full-screens it.</p></div></div>
+      <div class="yl"><span class="m">C</span><div><h4><code>services[]</code> — the pane count</h4><p><b>N services → N+1 panes.</b> This list is exactly why a repo gets 2, 4, or 6 panes — nothing is hardcoded.</p></div></div>
+      <div class="yl"><span class="m">D</span><div><h4><code>cwd</code> — where it runs</h4><p>Path (relative to the worktree) the pane starts in, e.g. <code>apps/web</code>.</p></div></div>
+      <div class="yl"><span class="m">E</span><div><h4><code>port</code> — the base</h4><p>Base port; the pool adds a per-slot offset (<code>+110/+120…</code>) so worktrees never collide.</p></div></div>
+      <div class="yl"><span class="m">F</span><div><h4><code>symlinks</code> — shared state</h4><p>Paths symlinked from your clone (e.g. <code>.wrangler/state</code>) so the worktree sees real R2 data.</p></div></div>
+      <div class="yl"><span class="m">G</span><div><h4><code>{LABEL_URL}</code> — cross-links</h4><p>Templates like <code>{MCP_URL}</code> resolve to the sibling's <code>localhost:&lt;port&gt;</code> — panes reach each other.</p></div></div>
+    </div>
+  </div>
+
+  <!-- ============ HOW TO USE (Claude Code) ============ -->
+  <div class="sec-head">
+    <h2>Using it through Claude Code</h2>
+    <span class="k">// install once, then one command per branch</span>
+  </div>
+  <p class="sec-note">Green lines are what <b>you</b> type in a terminal; cyan lines are things you can just <b>ask Claude Code</b> to do in-session.</p>
+  <div class="steps">
+    <div class="step">
+      <div class="sn">1</div>
+      <div class="sbody">
+        <h4>Install the skill <span class="when">once per machine</span></h4>
+        <div class="cli"><span class="p">$</span>bash &lt;(curl -fsSL https://raw.githubusercontent.com/rayhon/tmux-worktrees/main/install.sh)</div>
+        <p>Adds the <code style="font-family:var(--mono)">/tmux-worktrees</code> skill to Claude Code and wires the treehouse pool hook. Install <b>treehouse</b> + <b>herdr</b> too (the installer notes if either is missing).</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="sn">2</div>
+      <div class="sbody">
+        <h4>Create the config <span class="when">once per repo</span></h4>
+        <div class="cli chat"><span class="p">›</span>/tmux-worktrees</div>
+        <p>In any Claude Code session in the repo, run the skill. It <b>scans the repo</b> (apps, wrangler, next/vite configs) and <b>proposes a draft</b> <code>tmux-worktree.yaml</code> for you to accept or tweak — you don't write it blind.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="sn">3</div>
+      <div class="sbody">
+        <h4>Spin up a branch <span class="when">per task</span></h4>
+        <div class="cli"><span class="p">$</span>scripts/wt-up.sh feat/my-branch</div>
+        <p>Or just tell Claude <i>“spin up a worktree on <code>feat/my-branch</code>.”</i> It leases a pooled slot, checks out the branch, restores that branch's saved session (or starts fresh), and launches the stack.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="sn">4</div>
+      <div class="sbody">
+        <h4>Watch the stack <span class="when">anytime</span></h4>
+        <div class="cli"><span class="p">$</span>herdr --session fmwt</div>
+        <p>Attach to see one <b>tab per worktree</b>, labeled by branch, each with its live CLAUDE + service panes. The label tracks the branch automatically if you switch.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="sn">5</div>
+      <div class="sbody">
+        <h4>Release when done <span class="when">frees the slot</span></h4>
+        <div class="cli"><span class="p">$</span>scripts/wt-down.sh &lt;slot-path&gt;</div>
+        <p>Saves the branch's context, detaches, and <b>returns the slot to the pool</b> for the next task. herdr stays up; the tab relabels to <code>free-&lt;slot&gt;</code>.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ LEGEND ============ -->
+  <div class="legend">
+    <div class="leg">
+      <h4><span class="dot tree"></span>Worktree = branch</h4>
+      <p>An active slot is checked out on a branch; its tab shows that branch. Released → detached HEAD → tab reads <code>free-&lt;slot&gt;</code>.</p>
+    </div>
+    <div class="leg">
+      <h4><span class="dot sess"></span>Per-branch session</h4>
+      <p>Each CLAUDE pane links to a branch-keyed Claude session <code>.jsonl</code> — restored on return, fresh on a new branch. No leaked context.</p>
+    </div>
+    <div class="leg">
+      <h4><span class="dot herdr"></span>Ports don't clash</h4>
+      <p>Every slot gets offset <code>+110/+120/+130…</code>, so all worktrees' <code>mcp-hub · web · agent-hub</code> run at once, side by side.</p>
+    </div>
+    <div class="leg">
+      <h4><span class="dot branch"></span>Return is safe</h4>
+      <p><code>wt-down.sh</code> saves context, detaches the branch, returns the slot to the pool — herdr stays up, the tab relabels to free.</p>
+    </div>
+  </div>
+
+  <footer>
+    <span>treehouse (pool) · herdr (view) · tmux-worktrees skill (driver)</span>
+    <span>one yaml → tmux &amp; herdr · agent-board: mcp-hub · web · agent-hub · claude</span>
+  </footer>
+
+</div>
+</body>
+</html>
