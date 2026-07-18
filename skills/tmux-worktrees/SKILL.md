@@ -1,14 +1,40 @@
 ---
 name: tmux-worktrees
-description: Launch a tmux dev session for the current repo's git worktrees. Reads tmux-worktree.yaml at repo root.
+description: Give each git worktree its own live dev stack for the current repo. Default flow is a pooled worktree over treehouse + herdr (scripts/wt-up.sh <branch>); a classic tmux dashboard (/tmux-worktrees) is the alternative. Reads tmux-worktree.yaml at repo root.
 type: flexible
 ---
 
 # tmux-worktrees
 
-Launches (or re-attaches to) the tmux dev session for this repo.
+Give each git worktree its own live dev stack (one pane per service from `tmux-worktree.yaml`). Two flows, both reading the same yaml.
 
-## When invoked: `/tmux-worktrees`
+## Decide the flow FIRST
+
+**When the user asks to create / spin up / make a worktree on a branch, DEFAULT to the pooled flow — do NOT use Claude Code's native worktree tool (`EnterWorktree` / `claude --worktree`), which is the tmux flow.**
+
+### Pooled flow — treehouse + herdr (DEFAULT)
+
+Run, from the repo root (leases from the current repo's pool):
+
+```bash
+bash ~/.claude/skills/tmux-worktrees/scripts/wt-up.sh <branch> [<session-name>]
+```
+
+This leases a reusable worktree from a treehouse pool, checks out `<branch>`, wires it (offset ports, env, symlinks), and launches its stack in herdr. Then tell the user to attach in their own terminal (you can't bind their TTY):
+
+```bash
+herdr --session <session-name>      # session-name defaults to fmwt
+```
+
+Release later with `bash scripts/wt-down.sh <slot-path>`. Requires `treehouse` + `herdr` on `PATH`; if either is missing, say so and offer the tmux flow. Full guide: [docs/herdr.md](../../docs/herdr.md).
+
+### tmux dashboard flow
+
+Use **only** when the user explicitly wants tmux, or treehouse/herdr aren't available. This is the `/tmux-worktrees` flow documented below (Claude Code's `WorktreeCreate` hook + `tmux-worktrees.sh`). Full guide: [docs/tmux.md](../../docs/tmux.md).
+
+---
+
+## tmux dashboard flow — when invoked as `/tmux-worktrees`
 
 ### Step 0 — First-run install check
 
