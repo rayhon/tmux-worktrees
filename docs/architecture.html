@@ -664,7 +664,7 @@
           <div class="lane say"><span class="lane-h">💬 tell claude</span><span class="na"><b>— not this one.</b> A one-time terminal step; Claude can't install into your terminal.</span></div>
           <div class="lane run"><span class="lane-h">⌘ you run, in a terminal</span><span class="code"><span class="p">$</span>bash &lt;(curl -fsSL …/tmux-worktrees/main/install.sh)</span></div>
         </div>
-        <p>Adds the <code style="font-family:var(--mono)">/tmux-worktrees</code> skill and wires the treehouse pool hook. Install <b>treehouse</b> + <b>herdr</b> too (the installer notes if either is missing).</p>
+        <p>Adds the <code style="font-family:var(--mono)">/tmux-worktrees</code> skill and downloads the pooled-worktree scripts. It also <b>registers the treehouse hook</b> — writing <code style="font-family:var(--mono)">post_create = ["bash …/th-postcreate.sh"]</code> into <code style="font-family:var(--mono)">~/.config/treehouse/config.toml</code> (<b>user-level</b> — treehouse ignores repo-level hooks for safety). That one line is what makes every leased slot auto-wire. Install <b>treehouse</b> + <b>herdr</b> too (the installer notes if either is missing, and skips the hook non-destructively if you already have a <code style="font-family:var(--mono)">post_create</code>).</p>
       </div>
     </div>
     <div class="step">
@@ -735,7 +735,7 @@
     <div class="cf">
       <div class="cf-card">
         <div class="cf-top"><span class="cf-script">th-postcreate.sh</span><span class="cf-yours own">your script</span><span class="cf-hook">↳ fired by treehouse post_create</span></div>
-        <p><b>Seeds the port offset.</b> Derives a pool-unique offset from the slot number (<code style="font-family:var(--mono)">100 + slot×10</code>) so this worktree's ports never collide with others, then calls…</p>
+        <p><b>Seeds the port offset.</b> Fires because it's registered as treehouse's <code style="font-family:var(--mono)">post_create</code> hook in <code style="font-family:var(--mono)">~/.config/treehouse/config.toml</code> (wired once by the installer). Derives a pool-unique offset from the slot number (<code style="font-family:var(--mono)">100 + slot×10</code>) so this worktree's ports never collide with others, then calls…</p>
       </div>
     </div>
     <div class="cf">
