@@ -19,7 +19,7 @@ grep -q "tmux-worktrees" ~/.claude/settings.json 2>/dev/null && echo "installed"
 
 If not installed, tell the user to re-run the install command:
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/contextforce/tmux-worktrees/main/install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/rayhon/tmux-worktrees/main/install.sh)
 ```
 
 ### Step 1 — If `tmux-worktree.yaml` is missing, scan the repo and propose one
@@ -90,7 +90,70 @@ Write on confirm. Don't write without confirmation.
 
 ---
 
-## Creating a worktree — two paths
+## Pooled worktrees over treehouse + herdr (recommended for teams)
+
+Instead of the tmux + Claude-Code-worktree-hook flow above, a repo can use a
+**managed pool** of worktrees via [treehouse](https://github.com/kunchenguid/treehouse)
+and view each one's dev panes in [herdr](https://herdr.dev). This is the
+zero-hand-holding path: a dev with plain Claude Code runs one command per branch
+and gets a fully wired stack, no manual setup, no asking anyone.
+
+**treehouse manages the worktree; herdr just creates the panes and attaches.**
+treehouse keeps a small pool of reusable git worktrees off *your* clone (they
+share `.git` and, via the `.wrangler` mirror, your real local data). herdr shows
+each worktree's dev servers (main + services) in a labeled tab.
+
+### One-time setup (done by `install.sh`)
+
+`install.sh` (step 4) registers the treehouse `post_create` hook in
+`~/.config/treehouse/config.toml` pointing at
+`scripts/th-postcreate.sh`. That hook auto-wires every pooled worktree with
+offset ports, env, symlinks, and the `.wrangler` mirror. **treehouse ignores
+repo-level hooks for safety — the hook must be user-level, which is why the
+installer writes it there.** Prereqs the dev installs themselves: `treehouse`
+and `herdr` on `PATH` (the installer skips the hook with a note if treehouse is
+absent).
+
+Uses the same `tmux-worktree.yaml` at the repo root as the tmux flow — layout
+(`main.ratio`, `zoom_main`), services, ports, and symlinks are all read from it.
+No project-specific values live in the scripts.
+
+### Daily use — one command per branch
+
+```bash
+# from a checkout of the repo whose pool you want (default: current dir):
+scripts/wt-up.sh <branch>            # lease a slot, put it on <branch>, launch herdr stack
+herdr --session fmwt                 # attach; the tab is named after the branch
+# ... work in the CLAUDE pane; MCP/WEB/etc panes run the dev servers ...
+scripts/wt-down.sh <slot-path>       # save context, release slot back to pool (herdr stays up)
+```
+
+- `wt-up.sh <branch> [session] [repo-dir]` — leases a free treehouse slot,
+  checks out `<branch>` (fetches or creates it), restores that branch's saved
+  Claude context if any (else starts fresh — a reused slot never leaks the
+  previous occupant's conversation), and launches the herdr stack. Also installs
+  a `post-checkout`/`post-rewrite` hook so the tab label always tracks the branch.
+- `wt-down.sh <slot-path> [session]` — archives the branch's Claude context,
+  detaches the branch, returns the slot to the pool for reassignment, and
+  relabels the now-free tab. **Does NOT kill herdr** (the server runs from `$HOME`
+  so returning a slot can't take the session down).
+- Tab labels reflect status automatically: an active worktree shows its branch;
+  a released (detached) one shows `free-<slot>`.
+
+### Gotchas
+
+- **Real data:** the pool is keyed to whichever clone you run `wt-up.sh` from.
+  Run it from the clone whose local data (`.wrangler`, populated sqlite) you want
+  the worktree to share — a fresh/empty clone mirrors empty data.
+- **herdr server cwd:** `wt-up.sh` starts the herdr server from `$HOME`, never a
+  slot, so `treehouse return` (which kills processes by cwd) can't kill the
+  session. Don't start `herdr server` yourself from inside a slot.
+- **Same branch, two worktrees:** git forbids it — a branch can be checked out in
+  only one worktree at a time.
+
+---
+
+## Creating a worktree — two paths (tmux flow)
 
 **A. You, from a terminal:** `claude --worktree <name>` — fires the WorktreeCreate hook (wires env, offset ports, npm install) AND opens a fresh interactive Claude session + tmux window you're attached to.
 

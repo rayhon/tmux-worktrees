@@ -28,6 +28,11 @@ files=(
   "skills/tmux-worktrees/scripts/link-worktree-env.sh"
   "skills/tmux-worktrees/scripts/prevent-parent-repo-edits.sh"
   "skills/tmux-worktrees/scripts/wait-for-install.sh"
+  "skills/tmux-worktrees/scripts/wt-up.sh"
+  "skills/tmux-worktrees/scripts/wt-down.sh"
+  "skills/tmux-worktrees/scripts/herdr-worktrees.sh"
+  "skills/tmux-worktrees/scripts/herdr-relabel.sh"
+  "skills/tmux-worktrees/scripts/th-postcreate.sh"
 )
 
 for file in "${files[@]}"; do
@@ -114,7 +119,41 @@ else
   echo "  PreToolUse worktree-edit guard already present — skipping" >&2
 fi
 
+# --- 4. Register treehouse post_create hook (pooled worktrees + herdr) --------
+# Optional path: if `treehouse` is installed, wire its user-level post_create hook
+# so every pooled worktree auto-wires (offset ports, env, .wrangler mirror) the
+# same way the WorktreeCreate hook does. treehouse IGNORES repo-level hooks for
+# safety, so this MUST live in ~/.config/treehouse/config.toml. Idempotent and
+# non-destructive: only adds our line, preserves any existing [hooks].
+TH_CFG="$HOME/.config/treehouse/config.toml"
+TH_HOOK="$HOME/.claude/skills/tmux-worktrees/scripts/th-postcreate.sh"
+if command -v treehouse >/dev/null 2>&1; then
+  mkdir -p "$(dirname "$TH_CFG")"
+  if [[ -f "$TH_CFG" ]] && grep -q "th-postcreate.sh" "$TH_CFG" 2>/dev/null; then
+    echo "  treehouse post_create hook already present — skipping" >&2
+  elif [[ -f "$TH_CFG" ]] && grep -q "post_create" "$TH_CFG" 2>/dev/null; then
+    echo "→ NOTE: $TH_CFG already defines post_create." >&2
+    echo "  Add this command to it manually so pooled worktrees auto-wire:" >&2
+    echo "    bash $TH_HOOK" >&2
+  else
+    echo "→ Registering treehouse post_create hook in $TH_CFG" >&2
+    {
+      [[ -f "$TH_CFG" ]] && cat "$TH_CFG"
+      echo ""
+      echo "# Added by tmux-worktrees install: wire pooled worktrees (offset ports,"
+      echo "# env, .wrangler mirror) for the herdr/treehouse flow. Repo-level hooks"
+      echo "# are ignored by treehouse, so this must live here."
+      echo "[hooks]"
+      echo "post_create = [\"bash $TH_HOOK\"]"
+    } > "$TH_CFG.tmp" && mv "$TH_CFG.tmp" "$TH_CFG"
+    echo "  done" >&2
+  fi
+else
+  echo "  (treehouse not installed — skipping pooled-worktree hook; install treehouse to use the herdr flow)" >&2
+fi
+
 echo "" >&2
 echo "✓ tmux-worktrees installed." >&2
 echo "  /tmux-worktrees is now available in any Claude Code session." >&2
 echo "  Next: add tmux-worktree.yaml at your repo root, then type /tmux-worktrees" >&2
+echo "  Pooled worktrees over herdr:  scripts/wt-up.sh <branch>   (see SKILL.md)" >&2
