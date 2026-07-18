@@ -24,7 +24,7 @@ A Claude Code skill that manages a tmux dev session for git worktrees. Each work
 bash <(curl -fsSL https://raw.githubusercontent.com/rayhon/tmux-worktrees/main/install.sh)
 ```
 
-Downloads the skill to `~/.claude/skills/tmux-worktrees/` and wires the global `WorktreeCreate` hook in `~/.claude/settings.json`. Run once per machine.
+Downloads the skill to `~/.claude/skills/tmux-worktrees/` and wires the global `WorktreeCreate` hook in `~/.claude/settings.json`. It also installs the pooled-worktree scripts (`wt-up.sh` / `wt-down.sh` / `herdr-worktrees.sh`) and — if [treehouse](https://github.com/kunchenguid/treehouse) is on your `PATH` — registers the treehouse `post_create` hook so pooled worktrees auto-wire. Run once per machine.
 
 ## Per-repo setup
 
@@ -76,6 +76,30 @@ tmux -L wt attach -t wt
 ```
 
 You only need to attach once — re-running `/tmux-worktrees` after adding worktrees just refreshes the session you're already attached to.
+
+## Pooled worktrees (treehouse + herdr) — recommended
+
+The section above is the classic **tmux** flow. The recommended alternative is a **managed pool** of worktrees over [treehouse](https://github.com/kunchenguid/treehouse) (leases/returns reusable worktrees off your clone) viewed in [herdr](https://herdr.dev) (one persistent local server, a labeled tab per worktree). There's **no auto-switch** — you pick by the command you run. The same `tmux-worktree.yaml` drives both, so switching costs nothing.
+
+**Why prefer it:** warm reusable slots (no re-clone / re-`npm install` per branch), branch-labeled tabs that track the current branch, and a return that never kills your session.
+
+```bash
+scripts/wt-up.sh <branch> [<session-name>]   # lease a slot, put it on <branch>, launch the stack
+herdr --session <session-name>               # attach; one tab per worktree (session defaults to fmwt)
+scripts/wt-down.sh <slot-path>               # save context, return the slot to the pool (herdr stays up)
+```
+
+You can also just **tell Claude Code** *"spin up a worktree on `<branch>`"* or *"release that worktree"* — it runs `wt-up.sh` / `wt-down.sh` for you. (Install and attach must be run by you in a terminal; Claude can't bind your terminal.)
+
+For a shared-state repo, declare paths to share **once at the yaml root** — read by `link-worktree-env.sh` when a slot is wired:
+
+```yaml
+symlinks: [src/data]              # plain symlink from your clone
+mirror_with_sqlite_copies:        # hybrid: blob dirs symlinked, SQLite copied per-slot
+  - .wrangler/state
+```
+
+**Full visual explainer — why a multiplexer, what each piece does, the yaml field guide, and the exact create-a-worktree call flow:** open [`docs/architecture.html`](docs/architecture.html) in a browser.
 
 ## Navigation
 
@@ -223,5 +247,6 @@ Now the worktree on port 3010 launches as a self-consistent `http://localhost:30
 
 ## Requires
 
-- tmux
 - yq (`brew install yq` — auto-installed if missing)
+- **tmux flow:** tmux
+- **pooled flow:** [treehouse](https://github.com/kunchenguid/treehouse) + [herdr](https://herdr.dev) on your `PATH`
