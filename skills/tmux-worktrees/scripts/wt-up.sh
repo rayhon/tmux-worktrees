@@ -56,6 +56,20 @@ install_relabel_hook() {
       printf '# <<< herdr-worktrees relabel hook <<<\n'
     } >> "$hook"; chmod +x "$hook"; echo "→ installed post-rewrite relabel hook: $hook" >&2
   fi
+  # reference-transaction is the ONLY hook that catches a branch RENAME (`git branch -m`),
+  # which post-checkout/post-rewrite never see (HEAD doesn't move). It fires on every ref
+  # update, so: always drain stdin (else git may SIGPIPE), act only on the committed phase,
+  # background the relabel, and never exit non-zero (a non-zero prepared phase aborts the txn).
+  # herdr-relabel.sh no-ops when the label already matches, so the extra fires stay cheap.
+  hook="$hooks/reference-transaction"
+  if ! { [[ -f "$hook" ]] && grep -qF "$marker" "$hook"; }; then
+    [[ -f "$hook" ]] || printf '#!/usr/bin/env bash\n' > "$hook"
+    {
+      printf '%s\n' "$marker"
+      printf 'cat >/dev/null; [ "$1" = "committed" ] && "%s/herdr-relabel.sh" "$(git rev-parse --show-toplevel 2>/dev/null)" >/dev/null 2>&1 &\n' "$SC"
+      printf '# <<< herdr-worktrees relabel hook <<<\n'
+    } >> "$hook"; chmod +x "$hook"; echo "→ installed reference-transaction relabel hook: $hook" >&2
+  fi
 }
 install_relabel_hook "$REPO"
 

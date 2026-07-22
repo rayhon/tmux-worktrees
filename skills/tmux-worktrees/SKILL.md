@@ -158,7 +158,9 @@ scripts/wt-down.sh <slot-path>       # save context, release slot back to pool (
   checks out `<branch>` (fetches or creates it), restores that branch's saved
   Claude context if any (else starts fresh — a reused slot never leaks the
   previous occupant's conversation), and launches the herdr stack. Also installs
-  a `post-checkout`/`post-rewrite` hook so the tab label always tracks the branch.
+  `post-checkout` + `post-rewrite` + `reference-transaction` hooks so the tab label
+  always tracks the branch — including a `git branch -m` rename (which the checkout
+  hooks never see, since HEAD doesn't move; `reference-transaction` catches it).
 - `wt-down.sh <slot-path> [session]` — archives the branch's Claude context,
   detaches the branch, returns the slot to the pool for reassignment, and
   relabels the now-free tab. **Does NOT kill herdr** (the server runs from `$HOME`
