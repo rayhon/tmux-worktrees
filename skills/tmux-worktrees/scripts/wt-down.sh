@@ -35,6 +35,30 @@ fi
 # 2. release the branch (detach) so it can be checked out elsewhere.
 git -C "$SLOT" checkout -q --detach 2>/dev/null || true
 
+# 2.5 project teardown hooks — run tmux-worktree.yaml `on_free:` commands from
+# the slot root BEFORE returning it to the pool. Symmetric to `post_create`
+# (run on create by link-worktree-env.sh): this is where a project folds its
+# per-worktree local state into main, prunes caches, etc. Repo-specific
+# teardown the generic skill invokes but knows nothing about. The slot path is
+# exported as `$WT` for the commands. Non-fatal — a bad hook never blocks the
+# release. (A fold that needs servers down can stop them itself; freeing the
+# slot stops them anyway.)
+YAML="$REPO/tmux-worktree.yaml"
+if [[ -n "$REPO" && -f "$YAML" ]] && command -v yq >/dev/null 2>&1; then
+  of_count=$(yq '.on_free | length' "$YAML" 2>/dev/null || echo 0)
+  [[ "$of_count" =~ ^[0-9]+$ ]] || of_count=0
+  if [[ "$of_count" -gt 0 ]]; then
+    echo "→ running $of_count on_free hook(s) from tmux-worktree.yaml…" >&2
+    for ((i=0; i<of_count; i++)); do
+      of_cmd="$(yq -r ".on_free[$i]" "$YAML")"
+      [[ -n "$of_cmd" && "$of_cmd" != "null" ]] || continue
+      echo "  • $of_cmd" >&2
+      ( cd "$SLOT" && WT="$SLOT" bash -c "$of_cmd" ) >&2 \
+        || echo "  ⚠ on_free failed (non-fatal): $of_cmd" >&2
+    done
+  fi
+fi
+
 # 3. return the slot to the pool so treehouse can reassign it. Safe: the herdr
 #    server runs from $HOME, so this reaps only the slot's pane shell.
 if [[ -n "$REPO" ]]; then
