@@ -76,10 +76,24 @@ echo "→ Worktree '$THIS_NAME' → offset +$OFFSET (persisted in .wt-port-offse
 SVC_LABELS=()
 SVC_BASE_PORTS=()
 SVC_CWDS=()
+SVC_STATE_MODE=()
 for ((i=0; i<SVC_COUNT; i++)); do
   SVC_LABELS+=("$(yq ".services[$i].label" "$YAML")")
   SVC_BASE_PORTS+=("$(yq ".services[$i].port" "$YAML")")
   SVC_CWDS+=("$(yq ".services[$i].cwd // \".\"" "$YAML")")
+  # Per-service Miniflare/wrangler `.wrangler/state` policy (R2/KV/D1/DO/cache):
+  #   shared  → symlink the whole state dir to main  → one live cache all
+  #             worktrees read+write (safe: workerd does NOT exclusively lock
+  #             the sqlite — WAL allows concurrent multi-process access; verified).
+  #             Use for append-mostly shared caches (mcp-hub crawl-data, agent-hub
+  #             SOPs/configs) so a cache entry made in any worktree is seen by all.
+  #   private → full copy of the state dir from main at setup → an independent,
+  #             point-in-time clone. Use for app data that must NOT be shared
+  #             across branches (web fortypirates-apps: per-user workspace
+  #             snapshots + experiences). Overwrites/deletes stay local — no
+  #             cross-worktree corruption because nothing is shared.
+  #   (unset) → fall back to the legacy `mirror_with_sqlite_copies` hybrid.
+  SVC_STATE_MODE+=("$(yq ".services[$i].wrangler_state // \"\"" "$YAML")")
 done
 
 # --- Global symlink list -----------------------------------------------------
@@ -220,10 +234,44 @@ for ((i=0; i<SVC_COUNT; i++)); do
     done
   fi
 
-  # Hybrid mirror: symlink subtrees, copy SQLite lock files in place. Each
-  # worktree gets its own SQLite locks (so wrangler dev can run in parallel)
-  # while immutable blob dirs (r2/<bucket>/blobs/, 20GB) stay symlinked to
-  # parent for ~zero disk cost.
+  # Per-service `.wrangler/state` policy (shared symlink vs private copy).
+  # Takes precedence over the legacy hybrid mirror for `.wrangler/state`.
+  state_mode="${SVC_STATE_MODE[$i]}"
+  if [[ -n "$state_mode" && "$state_mode" != "null" ]]; then
+    src_state="$src/.wrangler/state"
+    dst_state="$dst/.wrangler/state"
+    if [[ -d "$src_state" ]]; then
+      # Clear any prior mirror (symlink OR real dir) so re-runs are idempotent.
+      rm -rf "$dst_state"
+      mkdir -p "$(dirname "$dst_state")"
+      case "$state_mode" in
+        shared)
+          # One live cache shared with main (and thus every other 'shared'
+          # worktree, since they all symlink the same main dir). Concurrent
+          # multi-process access is safe (WAL). Zero disk.
+          ln -sfn "$src_state" "$dst_state"
+          echo "    wrangler_state=shared (symlink → main)" >&2
+          ;;
+        private)
+          # Independent point-in-time clone. cp -R copies main's real files
+          # (blobs + sqlite + kv/do/cache). Writes stay local — no sharing,
+          # no cross-worktree corruption. -R (not -RL): main's own state is
+          # real dirs, so nothing to dereference.
+          cp -R "$src_state" "$dst_state"
+          echo "    wrangler_state=private (own copy of $(du -sh "$src_state" 2>/dev/null | cut -f1))" >&2
+          ;;
+        *)
+          echo "    ⚠ unknown wrangler_state='$state_mode' (expected shared|private) — skipped" >&2
+          ;;
+      esac
+    fi
+  fi
+
+  # Hybrid mirror: symlink subtrees, copy SQLite lock files in place. Legacy
+  # path for any `mirror_with_sqlite_copies:` entry. NOTE: `.wrangler/state` is
+  # now driven by the per-service `wrangler_state:` policy above; keep it OUT of
+  # `mirror_with_sqlite_copies` to avoid double-processing. This block remains
+  # for any OTHER hybrid path a project might declare.
   if [[ ${#GLOBAL_HYBRID_MIRRORS[@]} -gt 0 ]]; then
     for rel_path in "${GLOBAL_HYBRID_MIRRORS[@]}"; do
       src_path="$src/$rel_path"
