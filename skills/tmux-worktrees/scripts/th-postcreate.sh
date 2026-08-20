@@ -26,13 +26,22 @@ SC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LINK="$SC/link-worktree-env.sh"
 [[ -x "$LINK" ]] || LINK="$HOME/.claude/skills/tmux-worktrees/scripts/link-worktree-env.sh"
 
-# Derive the treehouse slot number from the path .../.treehouse/<hash>/<slot>/...
-slot="$(printf '%s\n' "$WT" | sed -nE 's#.*/\.treehouse/[^/]+/([0-9]+)(/|$).*#\1#p' | head -1)"
-[[ -z "$slot" ]] && slot=1
-offset=$(( 100 + slot * 10 ))
-
-printf '%s\n' "$offset" > "$WT/.wt-port-offset"
-echo "th-postcreate: seeded pool offset +$offset for slot $slot at $WT" >&2
+# Offsets come from the MACHINE-WIDE allocator (wt-offset.sh). The old
+# `100 + slot*10` scheme existed only because link-worktree-env.sh could not see
+# treehouse siblings (it scanned .claude/worktrees) and because per-repo offsets
+# collided across projects. One registry for every worktree on the machine fixes
+# both, so a pool slot, a .claude/worktrees checkout and another repo entirely
+# can never share an offset. Seeding here is still useful: the number exists
+# before link-worktree-env.sh runs, and claiming twice is idempotent.
+OFFSETTER="$SC/wt-offset.sh"
+[[ -x "$OFFSETTER" ]] || OFFSETTER="$HOME/.claude/skills/tmux-worktrees/scripts/wt-offset.sh"
+if [[ -x "$OFFSETTER" ]]; then
+  offset="$("$OFFSETTER" claim "$WT")"
+  printf '%s\n' "$offset" > "$WT/.wt-port-offset"
+  echo "th-postcreate: claimed machine-wide offset +$offset for $WT" >&2
+else
+  echo "th-postcreate: WARNING wt-offset.sh not found — link-worktree-env.sh will claim" >&2
+fi
 
 # Wire env/ports/symlinks/.wrangler/npm-install via the user's own script.
 if [[ -x "$LINK" ]]; then

@@ -62,6 +62,21 @@ services:
 
 > **Heads up on `--dangerously-skip-permissions`:** auto-approves every tool call Claude makes (writes, deletes, shell commands). Each worktree is in its own isolated folder so the blast radius is contained, but you're giving up the per-call prompt. Use `cmd: claude` if you'd rather keep the prompts.
 
+## `.wt-env.json` — the manifest agents read
+
+Wiring a worktree writes `.wt-env.json` at its root: this worktree's **resolved** ports, commands, env and on-disk outcome. `tmux-worktree.yaml` is intent shared by every worktree; the manifest is what this one actually got.
+
+```sh
+jq -r '.services[0].port' .wt-env.json   # 8810 — the offset port, not the 8790 base
+jq -r '.services[]|.cmd'  .wt-env.json   # placeholders already substituted, runnable as-is
+```
+
+Anything automated — Claude Code, an agent working in the worktree, CI — should read this rather than parse the yaml and redo the offset arithmetic. `state_landed` also records whether `.wrangler/state` ended up a symlink, a copy or absent, which the yaml cannot tell you.
+
+A repo with **no** `tmux-worktree.yaml` still gets one, as `"mode": "minimal"` — offset plus copied env files, empty `services`. The manifest is always there to read, so adopting the yaml is an upgrade rather than a prerequisite.
+
+Offsets come from one **machine-wide** registry (`~/.config/wt-ports/registry.json`, managed by `scripts/wt-offset.sh`), so two repos can never hand out the same offset to worktrees whose base ports overlap. `wt-offset.sh list` shows every allocation on the machine.
+
 ## Config gotcha — per-worktree URLs
 
 Worktrees run on **offset ports**, but env files are shared from the main clone, where values were written for the original port. When an app reads its **own** URL from env, you get a mismatch — the dev server listens on `:3010` but thinks it's `:3000`. Symptoms range from broken auth callbacks to silently-wrong API targets.

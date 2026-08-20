@@ -215,4 +215,27 @@ Split the work this way: **agent = create + wire + launch + servers; you = `tmux
 - **Restart:** `tmux -L wt kill-server` then re-run the launcher.
 - **Add a worktree:** `claude --worktree <name>` (you, terminal) OR `EnterWorktree <name>` + headless launcher (the agent, in-session) — see "Creating a worktree" above. Hook fires either way: symlinks env, offset ports, npm installs, adds tmux window.
 - **Remove a worktree:** there is no WorktreeRemove hook (Claude Code doesn't emit one, and a raw `git worktree remove` couldn't fire it anyway). Instead the launcher **reconciles on every run**: any window whose worktree dir no longer exists is killed. So a stale window self-cleans on the next `/tmux-worktrees` launch or the next `claude --worktree` (which calls `--add`). To clean immediately without a full launch: `~/.claude/skills/tmux-worktrees/scripts/tmux-worktrees.sh --prune`. Pruning is keyed on dir existence, so passing an explicit subset of worktrees to the launcher never kills the others.
-- **Port assignment:** alphabetical by worktree name, deterministic — 1st→+10, 2nd→+20, 3rd→+30.
+- **Port assignment:** the lowest free multiple of ten, allocated **machine-wide** by `scripts/wt-offset.sh` against `~/.config/wt-ports/registry.json`. Not per repo and not alphabetical: offsets used to restart at +10 in every repo, so worktree A of one project and worktree A of another both took +10 and collided whenever their base ports matched (8787 and 3000 are everybody's defaults). One registry means a pool slot, a `.claude/worktrees` checkout and an unrelated repo can never share an offset. `.wt-port-offset` in the worktree stays the cache consumers read.
+  - `wt-offset.sh list` shows every allocation on the machine — the fastest way to answer "what is on 8810?".
+  - A worktree deleted with `rm -rf` needs no cleanup; dead paths are pruned on the next claim. `release` is for a worktree that is gone, **not** for a pooled slot being freed — a parked slot keeps its offset so its ports are stable across leases.
+  - `git worktree move` changes the registry key, so `wt-pool.sh` calls `wt-offset.sh move` on both lease and retire. Without that a slot draws a fresh offset every lease.
+
+---
+
+## `.wt-env.json` — what an agent should read
+
+Every wired worktree carries `.wt-env.json` at its root. **This is the file to read**, not `tmux-worktree.yaml`: the yaml is *intent* shared by every worktree (base ports, policy), the manifest is *outcome* for this one — resolved ports, resolved commands, resolved env, and what actually landed on disk.
+
+```sh
+jq -r '.services[0].port'  .wt-env.json   # 8810, not the 8790 base
+jq -r '.services[]|.cmd'   .wt-env.json   # runnable as-is, placeholders resolved
+jq -r '.offset'            .wt-env.json   # this worktree's port offset
+```
+
+Without it a consumer has to find the yaml, have `yq`, know `port:` is a base rather than a port, read `.wt-port-offset` separately, and do the arithmetic — five steps and a convention it must be told.
+
+- `cmd` and `env` have `{PORT}`, `{INSPECTOR_PORT}`, `{LABEL_PORT}` and `{LABEL_URL}` already substituted, so a service starts without knowing tmux, herdr or treehouse exist.
+- `state_landed` reports what `.wrangler/state` actually is — `symlink`, `copy` or `absent` — which the yaml's `wrangler_state:` request cannot tell you.
+- **Minimal mode:** a repo with no `tmux-worktree.yaml` still gets a manifest, with `"mode": "minimal"`, the offset, copied env files and an empty `services` list. Adopting the yaml is an upgrade, not an entry fee, so an agent can rely on the manifest existing in any wired worktree.
+
+**Never bind a base port.** Take the port from the manifest, or add `.offset` to the project's base yourself.

@@ -35,6 +35,7 @@ LOCK="$REPO/.wt-pool.lock"
 YAML="$REPO/tmux-worktree.yaml"
 LINK_ENV="$SKILL_DIR/link-worktree-env.sh"
 LAUNCHER="$SKILL_DIR/tmux-worktrees.sh"
+OFFSETTER="$SKILL_DIR/wt-offset.sh"
 
 DEFAULT_BASE="${WT_POOL_BASE:-$(git -C "$REPO" symbolic-ref --quiet --short HEAD 2>/dev/null || echo main)}"
 HEADROOM="$(yq '.headroom // 2'  "$YAML" 2>/dev/null || echo 2)"
@@ -77,7 +78,7 @@ sha1_of() { [[ -f "$1" ]] && (sha1sum "$1" 2>/dev/null || shasum "$1") | awk '{p
 
 # --- provision: create a warm parked slot ------------------------------------
 # Creates `_pool-N` as a detached worktree at base, wires env (which kicks off
-# the background npm install), records lockfile hash baseline, marks it free.
+# the background npm install, which stamps the lockfile baseline), marks it free.
 do_provision_one() {
   reg_init
   local slot; slot="$(next_slot_name)"
@@ -86,10 +87,12 @@ do_provision_one() {
 
   log "provisioning $slot (detached at $DEFAULT_BASE)"
   git -C "$REPO" worktree add --detach "$dir" "$DEFAULT_BASE" >&2
-  "$LINK_ENV" "$dir" >&2 || true    # kicks off background npm install
-
-  local lf; lf="$(sha1_of "$dir/package-lock.json" || true)"
-  [[ -n "${lf:-}" ]] && printf '%s\n' "$lf" > "$dir/.npm-install.lock-hash"
+  "$LINK_ENV" "$dir" >&2 || true    # kicks off background npm install, which
+                                    # stamps .npm-install.lock-hash on success.
+                                    # Do NOT stamp it here: the install is still
+                                    # running, so a baseline written now claims
+                                    # deps are current before they are, and a
+                                    # failed install then looks up-to-date forever.
 
   reg_edit '.slots[$s] = {state:"free", branch:null}' --arg s "$slot"
   log "$slot parked (installing in background)"
@@ -137,6 +140,10 @@ cmd_lease() {
 
   # 1. move warm slot into branch-named identity (same-fs rename, carries deps)
   git -C "$REPO" worktree move "$WT_DIR/$slot" "$live"
+  # The port-offset registry is keyed by absolute path, so the rename has to be
+  # announced or the slot silently draws a NEW offset on every lease and its
+  # ports move under any process that cached them.
+  [[ -x "$OFFSETTER" ]] && "$OFFSETTER" move "$WT_DIR/$slot" "$live" >/dev/null || true
 
   # 2. rebind git state; clean only untracked non-ignored cruft (NO -x)
   git -C "$live" fetch --quiet || true
@@ -157,9 +164,13 @@ cmd_lease() {
   find "$live" -path '*/.wrangler/state/*' \
     \( -name '*.sqlite-shm' -o -name '*.sqlite-wal' \) -delete 2>/dev/null || true
 
-  # 5. re-wire env (same persisted offset; install auto-skips unless step 3 cleared it)
+  # 5. re-wire env (same persisted offset; link-env runs its own drift check too,
+  #    so a slot reused outside this lease path still reinstalls on drift)
   "$LINK_ENV" "$live" >&2
-  [[ -n "${new:-}" ]] && printf '%s\n' "$new" > "$live/.npm-install.lock-hash"
+  # The baseline is stamped by the install itself, on success — see
+  # link-worktree-env.sh. Writing it here unconditionally recorded "deps match
+  # this lockfile" even when the install was skipped or failed, which made every
+  # later drift check pass and left the slot permanently stale.
 
   # 6. build/attach the tmux window via the existing launcher (window==branch)
   "$LAUNCHER" --add "$branch" < /dev/null || true
@@ -203,6 +214,8 @@ cmd_retire() {
   git -C "$live" reset --hard
   git -C "$live" clean -fd
   git -C "$REPO" worktree move "$live" "$WT_DIR/$slot"
+  # Carry the offset back to the parked identity — same reason as on lease.
+  [[ -x "$OFFSETTER" ]] && "$OFFSETTER" move "$live" "$WT_DIR/$slot" >/dev/null || true
 
   ( flock 9; reg_edit '.slots[$s]={state:"free", branch:null}' --arg s "$slot" ) 9>"$LOCK"
   log "parked: $slot free (warm)"
