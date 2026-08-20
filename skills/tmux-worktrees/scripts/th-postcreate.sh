@@ -1,18 +1,18 @@
 #!/bin/bash
 # treehouse post_create hook: wire a pooled worktree the same way the
-# tmux-worktrees WorktreeCreate hook does, but with a POOL-UNIQUE port offset so
-# treehouse crew stacks never collide with the user's own .claude/worktrees
-# stacks.
+# tmux-worktrees WorktreeCreate hook does, so a crew stack never collides with
+# the user's own .claude/worktrees stacks or with another repo's.
 #
-# link-worktree-env.sh honors a pre-seeded .wt-port-offset and only scans
-# .claude/worktrees when it is absent. treehouse worktrees live under
-# ~/.treehouse/<repo-hash>/<slot>/, so that scan would find nothing and every
-# slot would land on +10. We instead derive a deterministic offset from the
-# treehouse slot number and seed it, then hand off to link-worktree-env.sh.
+# Offsets come from the machine-wide allocator (wt-offset.sh); this hook claims
+# one and hands off to link-worktree-env.sh, which also writes .wt-env.json — the
+# manifest an agent working in the slot reads to find its own ports.
 #
-# Offset scheme: 100 + slot*10  (slot 1 -> 110, slot 2 -> 120, ...). The user's
-# own tmux-worktrees offsets start at +10 and climb by 10, so a +100 base keeps
-# the pool clear of them until they exceed 9 concurrent worktrees.
+# It used to seed `100 + slot*10`, because link-worktree-env.sh allocated by
+# scanning `.claude/worktrees` — a directory treehouse slots do not live in (they
+# sit under ~/.treehouse/<repo-hash>/<slot>/), so without the seed every slot
+# would have landed on +10. The +100 base kept the pool clear of the user's own
+# worktrees, but only until either side passed nine, and it did nothing about two
+# repos handing out the same number. One registry replaces both halves.
 #
 # Registered as a USER-LEVEL treehouse hook (repo-level hooks are ignored by
 # treehouse for safety). install.sh wires it into ~/.config/treehouse/config.toml
