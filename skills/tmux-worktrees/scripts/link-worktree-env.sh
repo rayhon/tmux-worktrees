@@ -41,6 +41,26 @@ WORKTREE_ABS="$(cd "$WORKTREE_DIR" && pwd)"
 
 YAML="$MAIN_ROOT/tmux-worktree.yaml"
 
+# --- Keep our own artifacts out of git's view --------------------------------
+# `.wt-env.json` and `.wt-port-offset` are wiring output, not project content, and
+# the project has no reason to gitignore files a tool it does not depend on writes.
+# Left visible they read as untracked changes, which is not cosmetic: a supervisor
+# that refuses to discard a worktree holding uncommitted work (firstmate's teardown
+# does exactly this) sees them and blocks the teardown, so wiring a worktree would
+# make it undisposable. `info/exclude` is per-worktree, untracked and invisible to
+# the project's own .gitignore, which is precisely the scope this needs.
+exclude_wiring_artifacts() {
+  local excl
+  excl="$(git -C "$WORKTREE_ABS" rev-parse --git-path info/exclude 2>/dev/null)" || return 0
+  [[ -n "$excl" ]] || return 0
+  mkdir -p "$(dirname "$excl")"
+  local rel
+  for rel in .wt-env.json .wt-port-offset .npm-install.log .npm-install.pid .npm-install.ok .npm-install.lock-hash; do
+    grep -qxF "$rel" "$excl" 2>/dev/null || printf '%s\n' "$rel" >> "$excl"
+  done
+}
+exclude_wiring_artifacts
+
 # --- No yaml: degrade, do not die --------------------------------------------
 # A project without tmux-worktree.yaml used to get NOTHING from this script — it
 # exited 1 even though the caller (th-postcreate) had already seeded a valid
